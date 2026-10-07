@@ -81,5 +81,7 @@ controller through the lifecycle (`Unconfigured → Inactive → Active`).
 ## Scalar types
 
 `Pid<Real>` uses only `+ - * /`, `<`, and construction from an integer, so it
-instantiates for `float`, `double`, and custom arithmetic types such as
-Universal posits.
+works unchanged with custom arithmetic. The test suite runs the control law and
+a full closed loop (saturation, anti-windup, filtered derivative) in `double`,
+`float`, `posit<32,2>`, `posit<16,1>`, and IEEE-single `cfloat<32,8>`,
+comparing each against the `double` reference.

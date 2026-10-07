@@ -80,6 +80,12 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Examples',
+          items: [
+            { label: 'Mixed-Precision Gyro Filter', slug: 'examples/gyro-lowpass' },
+          ],
+        },
+        {
           label: 'Roadmap',
           items: [
             { label: 'Roadmap', slug: 'roadmap' },

@@ -7,6 +7,12 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <universal/number/cfloat/cfloat.hpp>
+#include <universal/number/posit/posit.hpp>
+
+#include <cmath>
+#include <cstdint>
+#include <type_traits>
 
 using branes::reflex::Pid;
 using branes::reflex::pid_config_valid;
@@ -14,6 +20,11 @@ using branes::reflex::PidConfig;
 using Catch::Matchers::WithinAbs;
 
 namespace {
+
+// Universal number types the controller must work with unchanged.
+using posit32 = sw::universal::posit<32, 2>;
+using posit16 = sw::universal::posit<16, 1>;
+using cfloat32 = sw::universal::cfloat<32, 8, std::uint32_t, true, false, false>;  // IEEE-754 single layout
 
 PidConfig<double> wide_limits() {
     PidConfig<double> cfg;
@@ -186,14 +197,57 @@ TEST_CASE("pid: config validation", "[pid]") {
     REQUIRE_FALSE(pid_config_valid(cfg));
 }
 
-TEMPLATE_TEST_CASE("pid: same control law across scalar types", "[pid][template]", float, double) {
+TEMPLATE_TEST_CASE(
+    "pid: same control law across scalar types", "[pid][template]", float, double, posit32, posit16, cfloat32) {
     PidConfig<TestType> cfg;
     cfg.kp = TestType(2);
     cfg.ki = TestType(1);
     Pid<TestType> pid{cfg};
     const TestType dt = TestType(0.5);
-    // P = 2 * 0.25 = 0.5, I = 1 * 0.25 * 0.5 = 0.125
-    REQUIRE_THAT(static_cast<double>(pid.update(TestType(1), TestType(0.75), dt)), WithinAbs(0.625, 1e-6));
+    // P = 2 * 0.25 = 0.5, I = 1 * 0.25 * 0.5 = 0.125 (exact in every type)
+    REQUIRE(static_cast<double>(pid.update(TestType(1), TestType(0.75), dt)) == 0.625);
+}
+
+namespace {
+
+// Drive a saturating, filtered PID around a first-order plant for 4 s and
+// return the final plant state. Exercises every branch of the control law
+// (P, I with clamping and conditional integration, filtered D, output
+// saturation) in the given arithmetic.
+template <typename T>
+double closed_loop_final_state() {
+    PidConfig<T> cfg;
+    cfg.kp = T(2);
+    cfg.ki = T(10);
+    cfg.kd = T(0.05);
+    cfg.derivative_tau = T(0.01);
+    Pid<T> pid{cfg};
+
+    const T dt = T(0.001);
+    const T time_constant = T(0.05);
+    T x = T(0);
+    for (int i = 0; i < 4000; ++i) {  // setpoint step at 1 s, then 3 s to settle
+        const T setpoint = i < 1000 ? T(0.75) : T(-0.25);
+        const T u = pid.update(setpoint, x, dt);
+        x += dt * (u - x) / time_constant;
+    }
+    return static_cast<double>(x);
+}
+
+}  // namespace
+
+TEMPLATE_TEST_CASE("pid: closed loop matches the double reference across scalar types",
+                   "[pid][template]",
+                   float,
+                   posit32,
+                   posit16,
+                   cfloat32) {
+    const double reference = closed_loop_final_state<double>();
+    const double got = closed_loop_final_state<TestType>();
+    // posit<16,1> carries ~12 fraction bits near 1, the 32-bit types ~24.
+    const double tolerance = std::is_same_v<TestType, posit16> ? 1e-2 : 1e-5;
+    REQUIRE_THAT(reference, WithinAbs(-0.25, 1e-3));  // the loop settled
+    REQUIRE_THAT(got, WithinAbs(reference, tolerance));
 }
 
 TEST_CASE("pid: usable in constant expressions", "[pid]") {

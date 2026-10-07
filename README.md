@@ -62,9 +62,51 @@ The control stack grows from classical to optimal to fault-tolerant control.
 
 [`racing-drone`](https://github.com/branes-ai/racing-drone) is the first integration target and the forcing function for this repo. Autonomous drone racing pushes every part of the control stack to its limit: high-rate inner loops, aggressive near-saturation maneuvers, tight latency budgets between perception and actuation, and no margin for a controller that hesitates. The goal of `reflex` is to provide enough high-performance optimal-control components (from a well-tuned PID baseline up to non-linear MPC) to build a competitive racing drone, and to carry those same components forward into safety-critical platforms where fault-tolerant control is a requirement, not a luxury.
 
+## Building and testing
+
+`reflex` is a header-only C++20 library (`branes::reflex`). The CMake build compiles the tests and benchmarks and requires CMake >= 4.0 and Ninja.
+
+```bash
+cmake --preset gcc-debug              # also: gcc-release, clang-debug, clang-release, msvc, ...
+cmake --build --preset gcc-debug
+ctest --preset gcc-debug
+```
+
+Use it from another CMake project:
+
+```cmake
+FetchContent_Declare(reflex GIT_REPOSITORY https://github.com/branes-ai/reflex.git GIT_TAG <release tag>)
+FetchContent_MakeAvailable(reflex)
+target_link_libraries(my_target PRIVATE branes::reflex)
+```
+
+```cpp
+#include <branes/reflex/control/pid.hpp>
+
+branes::reflex::PidConfig<float> cfg{.kp = 0.8f, .ki = 2.0f, .kd = 0.02f};
+branes::reflex::Pid<float> roll_rate{cfg};
+float torque = roll_rate.update(rate_setpoint, gyro_x, dt);
+```
+
+Documentation: <https://branes-ai.github.io/reflex/>
+
+## Repository layout
+
+```text
+reflex/
+├── bench/        # micro-benchmarks (per-update latency)
+├── cmake/        # dependency pins, test/warning helpers
+├── docs/         # design notes, assessments, session records
+├── docs-site/    # Starlight documentation site + Doxygen API reference
+├── scripts/      # developer and CI helper scripts
+├── sdk/          # the header-only library: sdk/include/branes/reflex/
+├── tests/        # Catch2 regression tests, one executable per file
+└── tools/        # host-side developer tools (simulation, tuning, plotting)
+```
+
 ## Status
 
-Early stage. The repository has just been created. Build system, directory layout, and first PID components will follow.
+Early stage. Phase 1 has started: a PID controller with derivative-on-measurement, derivative filtering, integral clamping, and anti-windup (`sdk/include/branes/reflex/control/pid.hpp`). Cascaded multirotor loops, filtering, and the SITL harness come next.
 
 ## License
 

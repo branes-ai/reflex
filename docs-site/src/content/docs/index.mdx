@@ -1,0 +1,45 @@
+---
+title: Reflex
+description: The involuntary nervous system of the Branes.AI platform — header-only C++20 control and safety components, from PID to non-linear MPC.
+template: splash
+hero:
+  tagline: Fast, deterministic control and safety loops that keep an autonomous machine stable and alive, whatever its higher-level brain is doing.
+  image:
+    file: ../../assets/hero.svg
+  actions:
+    - text: Get Started
+      link: ./getting-started/introduction/
+      icon: right-arrow
+    - text: View on GitHub
+      link: https://github.com/branes-ai/reflex
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid } from '@astrojs/starlight/components';
+
+## What Reflex is
+
+**Reflex** is the involuntary nervous system of the Branes.AI platform. Where
+[Cortex](https://branes-ai.github.io/cortex/) perceives the world and plans
+where to go, Reflex makes the vehicle get there, and keeps it flying when
+something goes wrong.
+
+<CardGrid>
+	<Card title="Header-only C++20" icon="seti:cpp">
+		No build step, no runtime dependencies. Link `branes::reflex` and include
+		the controller you need.
+	</Card>
+	<Card title="Deterministic by construction" icon="approve-check">
+		Constant-time updates that never allocate and never throw, for hard
+		real-time loops at kilohertz rates.
+	</Card>
+	<Card title="Type-generic" icon="setting">
+		Controllers are templated on the scalar type: `double`, `float`, or custom
+		arithmetic such as Universal posits.
+	</Card>
+	<Card title="PID to non-linear MPC" icon="rocket">
+		Starts with a production-grade PID and grows into LQR, linear MPC,
+		non-linear MPC, and fault-tolerant control.
+	</Card>
+</CardGrid>

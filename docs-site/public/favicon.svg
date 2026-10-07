@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 320" role="img" aria-label="Reflex">
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#f08a24"/>
+      <stop offset="1" stop-color="#ffd3a3"/>
+    </linearGradient>
+  </defs>
+  <!-- A closed feedback loop: setpoint in, controller, plant, measurement back. -->
+  <circle cx="160" cy="160" r="112" fill="none" stroke="url(#g)" stroke-width="10" stroke-dasharray="520 184" stroke-linecap="round" transform="rotate(-60 160 160)"/>
+  <path d="M40 160 H120" stroke="url(#g)" stroke-width="10" stroke-linecap="round"/>
+  <path d="M112 146 L128 160 L112 174" fill="none" stroke="url(#g)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M136 160 L156 112 L176 208 L196 136 L210 160 H264" fill="none" stroke="url(#g)" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

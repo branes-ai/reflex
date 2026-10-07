@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/branes-ai/reflex/compare/v0.1.0...v0.1.1) (2026-10-07)
+
+
+### Build System
+
+* **deps:** bring in mtl5 and universal with a mixed-precision gyro filter example ([#5](https://github.com/branes-ai/reflex/issues/5)) ([e3b2661](https://github.com/branes-ai/reflex/commit/e3b266108e7977ac0a87dd8efa1095fd7791da9d)), closes [#4](https://github.com/branes-ai/reflex/issues/4)
+
 ## 0.1.0 (2026-10-07)
 
 

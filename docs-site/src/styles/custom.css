@@ -1,0 +1,21 @@
+/* Reflex docs theme — dark slate with a signal-amber accent. */
+
+:root {
+  --sl-color-accent-low: #3a2410;
+  --sl-color-accent: #f08a24;
+  --sl-color-accent-high: #ffd3a3;
+
+  --sl-color-bg: #12151b;
+  --sl-color-bg-nav: #191d25;
+  --sl-color-bg-sidebar: #191d25;
+}
+
+/* Light mode keeps the same accent, darkened for contrast. */
+:root[data-theme='light'] {
+  --sl-color-accent-low: #fde3c6;
+  --sl-color-accent: #b85c0a;
+  --sl-color-accent-high: #4a2505;
+  --sl-color-bg: #ffffff;
+  --sl-color-bg-nav: #f7f7f8;
+  --sl-color-bg-sidebar: #f7f7f8;
+}

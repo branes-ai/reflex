@@ -1,0 +1,22 @@
+# Doxygen config for the reflex C++ API reference. Generated into public/api/
+# and served at <base>api/ by the Starlight site (see astro.config.mjs).
+PROJECT_NAME           = "Reflex C++ API"
+PROJECT_BRIEF          = "branes::reflex — header-only control and safety components"
+OUTPUT_DIRECTORY       = public
+HTML_OUTPUT            = api
+GENERATE_LATEX         = NO
+INPUT                  = ../sdk/include
+RECURSIVE              = YES
+FILE_PATTERNS          = *.hpp *.h
+EXTRACT_ALL            = YES
+EXTRACT_STATIC         = YES
+JAVADOC_AUTOBRIEF      = YES
+QUIET                  = YES
+WARN_IF_UNDOCUMENTED   = NO
+GENERATE_TREEVIEW      = YES
+DISABLE_INDEX          = NO
+FULL_SIDEBAR           = NO
+SOURCE_BROWSER         = YES
+ALPHABETICAL_INDEX     = YES
+SORT_MEMBER_DOCS       = YES
+BUILTIN_STL_SUPPORT    = YES

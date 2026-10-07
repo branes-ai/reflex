@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/branes-ai/reflex/compare/v0.1.1...v0.1.2) (2026-10-07)
+
+
+### Continuous Integration
+
+* harden runners against a stalled ubuntu mirror ([#8](https://github.com/branes-ai/reflex/issues/8)) ([8c3136f](https://github.com/branes-ai/reflex/commit/8c3136f1810fca500dac449bfc7826862f93895a))
+
 ## [0.1.1](https://github.com/branes-ai/reflex/compare/v0.1.0...v0.1.1) (2026-10-07)
 
 

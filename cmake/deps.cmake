@@ -4,8 +4,12 @@
 # intentional; bumps go via dedicated PRs so the release-please changelog
 # records dependency churn separately from feature work.
 #
-# The reflex library itself (branes::reflex) has no third-party dependencies;
-# everything here is for tests and benchmarks.
+# The reflex library itself (branes::reflex) has no third-party dependencies
+# yet; everything here is for tests, examples, and benchmarks, and is only
+# fetched when tests are built (FetchContent consumers of reflex pull nothing).
+# MTL5 joins branes::reflex's interface when the first linear-algebra
+# component (LQR / QP) lands; Universal stays test-only, since the controllers
+# are generic and never name a Universal type.
 
 include(FetchContent)
 
@@ -24,4 +28,109 @@ if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
     )
     FetchContent_MakeAvailable(Catch2)
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+endif()
+
+# ── stillwater-sc/mtl5 + stillwater-sc/universal ────────────────────
+# Header-only Stillwater sister projects, integrated with the pattern from the
+# Stillwater mixed-precision repos (mp-iterative, mp-blas) and cortex:
+#
+#   1. find_package(<dep> CONFIG QUIET) first — an installed copy wins.
+#   2. Otherwise a header-only FetchContent: SOURCE_SUBDIR names a directory
+#      with no CMakeLists.txt, so FetchContent_MakeAvailable populates the
+#      sources but never add_subdirectory()s the dependency.
+#   3. Either path yields the same targets, MTL5::mtl5 and universal::universal.
+#
+# Co-develop against local sister checkouts (no network) with:
+#   -DFETCHCONTENT_SOURCE_DIR_MTL5=/path/to/mtl5
+#   -DFETCHCONTENT_SOURCE_DIR_UNIVERSAL=/path/to/universal
+#
+# Third-party warnings: reflex builds its own targets with strict warnings as
+# errors (cmake/warnings.cmake), and MTL5 v5.12.0 / Universal v5.1.0 headers
+# emit 14 warning sites under that set (-Wshadow, -Wunused-local-typedefs,
+# -Wpedantic, -Wfloat-conversion; 9 in MTL5, 5 in Universal, none in reflex).
+# Left visible, they would fail every build on code we don't own, so the
+# fetched targets are SYSTEM by default (find_package's imported targets are
+# SYSTEM already). The Stillwater repos keep them visible to drive the
+# upstream clean-up (stillwater-sc/universal#1265); to see them here, configure
+# with -DREFLEX_SHOW_DEP_WARNINGS=ON --compile-no-warning-as-error.
+option(REFLEX_SHOW_DEP_WARNINGS "Treat MTL5/Universal headers as non-system (show their warnings)" OFF)
+
+set(REFLEX_MTL5_VERSION      5.12.0)
+set(REFLEX_UNIVERSAL_VERSION 5.1.0)
+
+if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
+    find_package(MTL5 CONFIG QUIET)
+    if(MTL5_FOUND)
+        message(STATUS "MTL5: using installed package ${MTL5_VERSION} (${MTL5_DIR})")
+    else()
+        if(FETCHCONTENT_SOURCE_DIR_MTL5)
+            message(STATUS "MTL5: using local checkout ${FETCHCONTENT_SOURCE_DIR_MTL5} (pin v${REFLEX_MTL5_VERSION} bypassed)")
+        else()
+            message(STATUS "MTL5: fetching v${REFLEX_MTL5_VERSION} headers")
+        endif()
+        FetchContent_Declare(
+            mtl5
+            GIT_REPOSITORY https://github.com/stillwater-sc/mtl5.git
+            GIT_TAG        v${REFLEX_MTL5_VERSION}
+            GIT_SHALLOW    TRUE
+            SOURCE_SUBDIR  _header_only_no_build
+        )
+        FetchContent_MakeAvailable(mtl5)
+
+        # MTL5's configure step normally generates mtl/version.hpp, which the
+        # <mtl/mtl.hpp> umbrella includes. That step is skipped, so generate it
+        # from MTL5's own template. (A local checkout still gets the pinned
+        # version in these macros.)
+        string(REPLACE "." ";" _mtl5_ver "${REFLEX_MTL5_VERSION}")
+        list(GET _mtl5_ver 0 MTL5_VERSION_MAJOR)
+        list(GET _mtl5_ver 1 MTL5_VERSION_MINOR)
+        list(GET _mtl5_ver 2 MTL5_VERSION_PATCH)
+        set(MTL5_VERSION "${REFLEX_MTL5_VERSION}")
+        configure_file(
+            ${mtl5_SOURCE_DIR}/include/mtl/version.hpp.in
+            ${mtl5_BINARY_DIR}/include/mtl/version.hpp
+            @ONLY)
+
+        add_library(mtl5 INTERFACE)
+        add_library(MTL5::mtl5 ALIAS mtl5)
+        target_include_directories(mtl5 INTERFACE
+            ${mtl5_SOURCE_DIR}/include
+            ${mtl5_BINARY_DIR}/include)
+        target_compile_features(mtl5 INTERFACE cxx_std_20)
+        if(NOT REFLEX_SHOW_DEP_WARNINGS)
+            set_target_properties(mtl5 PROPERTIES SYSTEM ON)
+        endif()
+    endif()
+
+    find_package(universal CONFIG QUIET)
+    if(universal_FOUND)
+        message(STATUS "Universal: using installed package ${universal_VERSION} (${universal_DIR})")
+    else()
+        if(FETCHCONTENT_SOURCE_DIR_UNIVERSAL)
+            message(STATUS "Universal: using local checkout ${FETCHCONTENT_SOURCE_DIR_UNIVERSAL} (pin v${REFLEX_UNIVERSAL_VERSION} bypassed)")
+        else()
+            message(STATUS "Universal: fetching v${REFLEX_UNIVERSAL_VERSION} headers")
+        endif()
+        FetchContent_Declare(
+            universal
+            GIT_REPOSITORY https://github.com/stillwater-sc/universal.git
+            GIT_TAG        v${REFLEX_UNIVERSAL_VERSION}
+            GIT_SHALLOW    TRUE
+            SOURCE_SUBDIR  _header_only_no_build
+        )
+        FetchContent_MakeAvailable(universal)
+
+        # Universal headers use two include conventions:
+        #   - external: #include <sw/universal/...>  (needs include/)
+        #   - internal: #include <universal/...>     (needs include/sw/)
+        add_library(universal INTERFACE)
+        add_library(universal::universal ALIAS universal)
+        target_include_directories(universal INTERFACE
+            ${universal_SOURCE_DIR}/include
+            ${universal_SOURCE_DIR}/include/sw)
+        target_compile_features(universal INTERFACE cxx_std_20)
+        if(NOT REFLEX_SHOW_DEP_WARNINGS)
+            set_target_properties(universal PROPERTIES SYSTEM ON)
+        endif()
+    endif()
 endif()

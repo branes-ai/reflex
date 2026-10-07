@@ -48,8 +48,31 @@ FetchContent_MakeAvailable(reflex)  # tests/bench are off when not top-level
 target_link_libraries(my_flight_controller PRIVATE branes::reflex)
 ```
 
+## MTL5 and Universal
+
+Tests and examples use [MTL5](https://github.com/stillwater-sc/mtl5) (linear
+algebra) and [Universal](https://github.com/stillwater-sc/universal) (posits,
+cfloat, fixed-point). Both are header-only Stillwater sister projects. CMake
+uses an installed copy if `find_package` finds one; otherwise it fetches only
+their headers at the versions pinned in `cmake/deps.cmake`. Neither is fetched
+when tests are off, so projects that consume reflex do not pull them.
+
+To build against local checkouts (no network needed):
+
+```bash
+cmake --preset gcc-debug \
+  -DFETCHCONTENT_SOURCE_DIR_MTL5=$HOME/dev/stillwater/clones/mtl5 \
+  -DFETCHCONTENT_SOURCE_DIR_UNIVERSAL=$HOME/dev/stillwater/clones/universal
+```
+
+Their headers are treated as system headers, so their warnings don't trip
+reflex's warnings-as-errors build. To see them, for example while fixing
+them upstream, add
+`-DREFLEX_SHOW_DEP_WARNINGS=ON --compile-no-warning-as-error`.
+
 ## Adding a test
 
-Drop a `<name>.cpp` Catch2 file into `tests/<layer>/`. It is picked up, built,
+Drop a `<name>.cpp` Catch2 file into `tests/<layer>/` (`tests/sdk/` for the
+library, `tests/examples/` for end-to-end examples). It is picked up, built,
 and registered with CTest automatically (see `cmake/compile_all.cmake`). Test
 and benchmark targets build with strict warnings as errors.

@@ -1,6 +1,16 @@
 name: Reflex CI
 
-on: [push, pull_request]
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# A new push to a PR supersedes its in-flight run; runs on main are never
+# cancelled.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Top-level least-privilege default.
 permissions:
@@ -12,12 +22,15 @@ jobs:
     # 24.04 for a clang-format (18.x) that supports the IncludeBlocks/Regroup
     # options in .clang-format.
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           persist-credentials: false
-      - name: Install clang-format
-        run: sudo apt-get update && sudo apt-get install -y clang-format
+      - name: clang-format version
+        # Preinstalled on ubuntu-24.04 (runner-images: clang 18 default, with the
+        # clang-format alternative). No apt step, so no mirror dependency.
+        run: clang-format --version
       - name: clang-format --dry-run on tracked C/C++ sources
         run: |
           set -e
@@ -34,6 +47,7 @@ jobs:
   build-and-test-linux:
     name: Build and Test (Linux - ${{ matrix.preset }})
     runs-on: ubuntu-24.04
+    timeout-minutes: 25
     strategy:
       fail-fast: false
       matrix:
@@ -42,8 +56,12 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           persist-credentials: false
-      - name: Install compilers
-        run: sudo apt-get update && sudo apt-get install -y build-essential clang
+      - name: Compiler versions
+        # gcc/g++ 13 and clang/clang++ 18 are preinstalled on ubuntu-24.04; no apt
+        # step, so no dependency on the Ubuntu mirror.
+        run: |
+          g++ --version | head -1
+          clang++ --version | head -1
       - name: Install CMake 4.x + Ninja
         # The project requires CMake >= 4.0; runner images and distro apt
         # packages can lag, so pin the toolchain explicitly.
@@ -60,6 +78,7 @@ jobs:
   build-and-test-windows:
     name: Build and Test (Windows - MSVC ${{ matrix.label }})
     runs-on: windows-2022
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

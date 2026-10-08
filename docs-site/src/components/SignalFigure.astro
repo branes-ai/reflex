@@ -1,0 +1,126 @@
+---
+// Inlines a generated SVG chart (so it follows the docs' light/dark theme) and
+// adds the hover/keyboard readout: a crosshair that snaps to the nearest
+// sample and a tooltip listing every series at that time. The SVG carries its
+// own data in a data-hover attribute (see docs-site/scripts/gen-gyro-figures.mjs).
+interface Props {
+  svg: string;
+  caption: string;
+}
+const { svg, caption } = Astro.props;
+---
+
+<figure class="signal-figure">
+  <Fragment set:html={svg} />
+  <figcaption>{caption}</figcaption>
+</figure>
+
+<style>
+  .signal-figure {
+    margin: 1.5rem 0;
+  }
+  .signal-figure :global(svg) {
+    width: 100%;
+    height: auto;
+    display: block;
+    touch-action: pan-y;
+  }
+  .signal-figure figcaption {
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+    margin-top: 0.5rem;
+  }
+</style>
+
+<script>
+  const NS = 'http://www.w3.org/2000/svg';
+
+  function attach(svg: SVGSVGElement) {
+    let data: {
+      x0: number; w: number; top: number; bottom: number;
+      t: number[]; series: { name: string; key: string; v: number[] }[];
+    };
+    try {
+      data = JSON.parse(svg.dataset.hover ?? '');
+    } catch {
+      return;
+    }
+    const n = data.t.length;
+    const xhair = svg.querySelector<SVGLineElement>('.xhair');
+    const tip = svg.querySelector<SVGGElement>('.tip');
+    const box = tip?.querySelector<SVGRectElement>('.bg');
+    if (!xhair || !tip || !box || n < 2) return;
+
+    // Tooltip rows: time, then one row per series (key swatch + name + value).
+    const rows: SVGTextElement[] = [];
+    const keys: SVGRectElement[] = [];
+    for (let i = 0; i <= data.series.length; i++) {
+      const text = document.createElementNS(NS, 'text');
+      tip.appendChild(text);
+      rows.push(text);
+      if (i > 0) {
+        const key = document.createElementNS(NS, 'rect');
+        key.setAttribute('class', `k-${data.series[i - 1].key}`);
+        key.setAttribute('width', '10');
+        key.setAttribute('height', '3');
+        key.setAttribute('rx', '1.5');
+        tip.insertBefore(key, text);
+        keys.push(key);
+      }
+    }
+    const tipW = 210;
+    const rowH = 17;
+    box.setAttribute('width', String(tipW));
+    box.setAttribute('height', String(rowH * rows.length + 10));
+
+    let current = Math.floor(n / 2);
+    function show(i: number) {
+      current = Math.max(0, Math.min(n - 1, i));
+      const x = data.x0 + (current / (n - 1)) * data.w;
+      xhair!.setAttribute('x1', String(x));
+      xhair!.setAttribute('x2', String(x));
+      xhair!.style.visibility = 'visible';
+      const right = x + 12 + tipW > data.x0 + data.w + 100;
+      const tx = right ? x - 12 - tipW : x + 12;
+      const ty = data.top + 4;
+      box!.setAttribute('x', String(tx));
+      box!.setAttribute('y', String(ty));
+      rows[0].textContent = `t = ${data.t[current].toFixed(3)} s`;
+      rows[0].setAttribute('x', String(tx + 10));
+      rows[0].setAttribute('y', String(ty + 18));
+      data.series.forEach((s, j) => {
+        const row = rows[j + 1];
+        row.textContent = `${s.name}: ${s.v[current].toFixed(3)} rad/s`;
+        row.setAttribute('x', String(tx + 26));
+        row.setAttribute('y', String(ty + 18 + rowH * (j + 1)));
+        keys[j].setAttribute('x', String(tx + 10));
+        keys[j].setAttribute('y', String(ty + 13 + rowH * (j + 1)));
+      });
+      tip!.style.visibility = 'visible';
+    }
+    function hide() {
+      xhair!.style.visibility = 'hidden';
+      tip!.style.visibility = 'hidden';
+    }
+    function toIndex(ev: PointerEvent) {
+      const ctm = svg.getScreenCTM();
+      if (!ctm) return current;
+      const p = new DOMPoint(ev.clientX, ev.clientY).matrixTransform(ctm.inverse());
+      return Math.round(((p.x - data.x0) / data.w) * (n - 1));
+    }
+    svg.addEventListener('pointermove', (ev) => show(toIndex(ev)));
+    svg.addEventListener('pointerleave', hide);
+    svg.addEventListener('focus', () => show(current));
+    svg.addEventListener('blur', hide);
+    svg.addEventListener('keydown', (ev) => {
+      const step = Math.max(1, Math.round(n / 100));
+      if (ev.key === 'ArrowRight') show(current + step);
+      else if (ev.key === 'ArrowLeft') show(current - step);
+      else if (ev.key === 'Escape') hide();
+      else return;
+      ev.preventDefault();
+    });
+  }
+
+  document.querySelectorAll<SVGSVGElement>('.signal-figure svg[data-hover]').forEach(attach);
+</script>

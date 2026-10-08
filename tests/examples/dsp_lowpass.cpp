@@ -23,10 +23,14 @@
 #include <universal/number/posit/posit.hpp>
 
 #include <cmath>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
+#include <fstream>
 #include <numbers>
+#include <string>
 #include <vector>
 
 namespace {
@@ -147,6 +151,87 @@ ArithmeticRun run(const char* name, const Biquad& f, const std::vector<double>& 
     return {name, err, err > 0.0 ? db(rms(reference) / err) : 999.0, finite};
 }
 
+// Frequency response H(e^{j 2 pi f / fs}) of the biquad, evaluated directly
+// from its transfer function.
+std::complex<double> response(const Biquad& f, double hz) {
+    const std::complex<double> z_inv = std::polar(1.0, -2.0 * std::numbers::pi * hz / kFs);
+    return (f.b0 + f.b1 * z_inv + f.b2 * z_inv * z_inv) / (1.0 + f.a1 * z_inv + f.a2 * z_inv * z_inv);
+}
+
+// Phase delay [s]: how far a sinusoid at `hz` is shifted in time.
+double phase_delay_s(const Biquad& f, double hz) {
+    return -std::arg(response(f, hz)) / (2.0 * std::numbers::pi * hz);
+}
+
+// Group delay [s]: -d(phase)/d(omega), by central difference (the phase is
+// smooth and far from +/-pi wrap at the frequencies used here).
+double group_delay_s(const Biquad& f, double hz) {
+    const double dh = 1e-3;
+    const double dphi = std::arg(response(f, hz + dh) / response(f, hz - dh));
+    return -dphi / (2.0 * std::numbers::pi * 2.0 * dh);
+}
+
+// Phase [rad] of a sampled sinusoid at kMotionHz, by projecting the settled
+// samples onto sin and cos over a whole number of periods (kSettle..kSamples
+// is exactly three 2 Hz periods at 1 kHz).
+double motion_phase(const std::vector<double>& x) {
+    double in_phase = 0.0;
+    double quadrature = 0.0;
+    for (std::size_t k = kSettle; k < kSamples; ++k) {
+        const double w = 2.0 * std::numbers::pi * kMotionHz * static_cast<double>(k) / kFs;
+        in_phase += x[k] * std::sin(w);
+        quadrature += x[k] * std::cos(w);
+    }
+    return std::atan2(quadrature, in_phase);
+}
+
+// Opt-in trace export for the docs figures (docs-site/scripts/gen-gyro-figures.mjs):
+// set REFLEX_DSP_TRACE_DIR to a directory and this writes gyro_lowpass.json.
+void write_trace(const Biquad& f, const std::vector<double>& output, double measured_lag_s) {
+    const char* dir = std::getenv("REFLEX_DSP_TRACE_DIR");
+    if (dir == nullptr || *dir == '\0') {
+        return;
+    }
+    const std::string path = std::string(dir) + "/gyro_lowpass.json";
+    std::ofstream out(path);
+    if (!out) {
+        std::fprintf(stderr, "cannot write %s\n", path.c_str());
+        return;
+    }
+    out.precision(9);
+    out << "{\n  \"fs_hz\": " << kFs << ", \"fc_hz\": " << kCutoff << ",\n";
+    out << "  \"motion_hz\": " << kMotionHz << ", \"motion_amp\": " << kMotionAmp << ",\n";
+    out << "  \"vibration_hz\": " << kVibrationHz << ", \"vibration_amp\": " << kVibrationAmp << ",\n";
+    out << "  \"settle_samples\": " << kSettle << ",\n";
+    out << "  \"coefficients\": {\"b0\": " << f.b0 << ", \"b1\": " << f.b1 << ", \"b2\": " << f.b2
+        << ", \"a1\": " << f.a1 << ", \"a2\": " << f.a2 << "},\n";
+    out << "  \"measured_motion_lag_ms\": " << measured_lag_s * 1e3 << ",\n";
+    out << "  \"response\": [";
+    const double freqs[] = {kMotionHz, kCutoff, kVibrationHz};
+    for (std::size_t i = 0; i < 3; ++i) {
+        const auto h = response(f, freqs[i]);
+        out << (i ? ", " : "") << "{\"hz\": " << freqs[i] << ", \"gain\": " << std::abs(h)
+            << ", \"gain_db\": " << db(std::abs(h)) << ", \"phase_deg\": " << std::arg(h) * 180.0 / std::numbers::pi
+            << ", \"phase_delay_ms\": " << phase_delay_s(f, freqs[i]) * 1e3
+            << ", \"group_delay_ms\": " << group_delay_s(f, freqs[i]) * 1e3 << "}";
+    }
+    out << "],\n";
+    auto series = [&](const char* name, auto&& value, bool last) {
+        out << "  \"" << name << "\": [";
+        for (std::size_t k = 0; k < kSamples; ++k) {
+            out << (k ? "," : "") << value(k);
+        }
+        out << "]" << (last ? "\n" : ",\n");
+    };
+    out.precision(6);
+    series("motion", [](std::size_t k) { return motion(k); }, false);
+    series("vibration", [](std::size_t k) { return vibration(k); }, false);
+    series("input", [](std::size_t k) { return motion(k) + vibration(k); }, false);
+    series("output", [&](std::size_t k) { return output[k]; }, true);
+    out << "}\n";
+    std::printf("wrote %s\n", path.c_str());
+}
+
 }  // namespace
 
 TEST_CASE("dsp: butterworth low-pass meets its spec in double", "[dsp][example]") {
@@ -213,4 +298,36 @@ TEST_CASE("dsp: the same filter in 32-bit and 16-bit arithmetic", "[dsp][example
     REQUIRE(runs[2].snr_db > 33.0);
     REQUIRE(runs[3].snr_db > 45.0);
     REQUIRE(runs[4].snr_db > 36.0);
+}
+
+TEST_CASE("dsp: the filter delays the motion by its phase delay", "[dsp][example]") {
+    const Biquad f = butterworth_lowpass(kCutoff, kFs);
+
+    // Analytic: the 2 Hz motion is shifted by the phase delay at 2 Hz, and in
+    // the passband phase delay ~ group delay (a near-pure time shift).
+    const double analytic_s = phase_delay_s(f, kMotionHz);
+    const double group_s = group_delay_s(f, kMotionHz);
+
+    // Measured: the phase of the filtered motion vs. the clean motion, from
+    // the settled samples. Independent of the H(z) formula above.
+    std::vector<double> clean(kSamples);
+    for (std::size_t k = 0; k < kSamples; ++k) {
+        clean[k] = motion(k);
+    }
+    const std::vector<double> motion_only = filter_signal<double>(f, false);
+    const double dphi = motion_phase(clean) - motion_phase(motion_only);
+    const double measured_s = dphi / (2.0 * std::numbers::pi * kMotionHz);
+
+    std::printf("2 Hz motion delay: measured %.3f ms, phase delay %.3f ms, group delay %.3f ms (%.2f deg)\n",
+                measured_s * 1e3,
+                analytic_s * 1e3,
+                group_s * 1e3,
+                std::arg(response(f, kMotionHz)) * 180.0 / std::numbers::pi);
+
+    REQUIRE(std::abs(measured_s - analytic_s) < 0.05e-3);  // agree to 50 us
+    REQUIRE(analytic_s > 7.0e-3);                          // ~7.5 ms at fc = 30 Hz
+    REQUIRE(analytic_s < 8.0e-3);
+    REQUIRE(std::abs(group_s - analytic_s) < 0.1e-3);  // passband: ~ pure time shift
+
+    write_trace(f, filter_signal<double>(f, true), measured_s);
 }

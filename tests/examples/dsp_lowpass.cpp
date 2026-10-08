@@ -185,14 +185,33 @@ double motion_phase(const std::vector<double>& x) {
     return std::atan2(quadrature, in_phase);
 }
 
+// Value of an environment variable, or "" if unset. MSVC deprecates
+// std::getenv (C4996, an error under the warnings-as-errors build), so use its
+// _dupenv_s there.
+std::string env_var(const char* name) {
+#ifdef _MSC_VER
+    char* value = nullptr;
+    std::size_t len = 0;
+    if (_dupenv_s(&value, &len, name) != 0 || value == nullptr) {
+        return {};
+    }
+    std::string result(value);
+    std::free(value);
+    return result;
+#else
+    const char* value = std::getenv(name);
+    return value == nullptr ? std::string{} : std::string(value);
+#endif
+}
+
 // Opt-in trace export for the docs figures (docs-site/scripts/gen-gyro-figures.mjs):
 // set REFLEX_DSP_TRACE_DIR to a directory and this writes gyro_lowpass.json.
 void write_trace(const Biquad& f, const std::vector<double>& output, double measured_lag_s) {
-    const char* dir = std::getenv("REFLEX_DSP_TRACE_DIR");
-    if (dir == nullptr || *dir == '\0') {
+    const std::string dir = env_var("REFLEX_DSP_TRACE_DIR");
+    if (dir.empty()) {
         return;
     }
-    const std::string path = std::string(dir) + "/gyro_lowpass.json";
+    const std::string path = dir + "/gyro_lowpass.json";
     std::ofstream out(path);
     if (!out) {
         std::fprintf(stderr, "cannot write %s\n", path.c_str());

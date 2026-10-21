@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3](https://github.com/branes-ai/reflex/compare/v0.1.2...v0.1.3) (2026-10-08)
+
+
+### Documentation
+
+* **examples:** fix the gyro filter delay table broken by pipes in math ([#12](https://github.com/branes-ai/reflex/issues/12)) ([e6cad81](https://github.com/branes-ai/reflex/commit/e6cad81d44b607fe6e56d8e6e63067505870445e))
+* **examples:** time-domain figures, delay callout, and filter-theory explainer for the gyro filter ([#10](https://github.com/branes-ai/reflex/issues/10)) ([14555b9](https://github.com/branes-ai/reflex/commit/14555b9d31016382939b45947842b065b0240460))
+
 ## [0.1.2](https://github.com/branes-ai/reflex/compare/v0.1.1...v0.1.2) (2026-10-07)
 
 

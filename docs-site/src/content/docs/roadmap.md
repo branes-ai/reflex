@@ -13,6 +13,9 @@ The first integration target is the
       integral clamping, and conditional-integration anti-windup
 - [ ] Cascaded rate → attitude → velocity → position loops for multirotors
 - [ ] Gyro/accel filtering (low-pass, notch, RPM-based dynamic notch)
+- [ ] IMU attitude and rate estimation, independent of `cortex`
+- [ ] IMU propagation of the `cortex` state estimate (VIO/LIO) to the control
+      rate, with delayed-measurement fusion
 - [ ] Motor mixing, thrust/torque allocation, actuator saturation handling
 - [ ] SITL harness with a rigid-body multirotor dynamics model
 
@@ -31,6 +34,8 @@ The first integration target is the
 ## Phase 4: Fault tolerance and safety
 
 - [ ] Actuator and sensor fault detection and isolation
+- [ ] State-estimate health monitoring: staleness and innovation (NIS) gating
+      of the `cortex` estimate
 - [ ] Control reallocation after rotor/motor loss
 - [ ] Safety envelopes and command filtering
 - [ ] Graceful degradation: mission → hold → return/land → terminal failsafe

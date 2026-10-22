@@ -15,9 +15,43 @@ The Branes.AI platform follows the same split:
 |---|---|---|---|
 | [`cortex`](https://github.com/branes-ai/cortex) | Cerebral cortex | Perception (VIO, SLAM, SfM), world building (3D scene graphs), path planning | ~5–100 Hz, best effort |
 | **`reflex`** (this repo) | Brainstem, spinal cord, autonomic system | Stabilization, IMU state estimation, trajectory tracking, optimal control, fault detection and recovery, safety envelopes | ~100 Hz–8 kHz, hard real-time |
+| [`synapse`](https://github.com/branes-ai/synapse) | The synapses: where signals are transmitted and computed | Tensor graph engine: execution of ML models, with static memory planning | Deterministic, allocation-free |
 | [`racing-drone`](https://github.com/branes-ai/racing-drone) | The whole organism | Mission and flight controller for an autonomous racing drone, assembled from `cortex` and `reflex` components | — |
 
 `cortex` tells the vehicle *where it should go*. `reflex` makes sure it *gets there without falling out of the sky*, and takes over when something goes wrong: a motor fails, a sensor drops out, or the planner sends a command that would leave the safe flight envelope.
+
+### The Branes.AI stack
+
+```text
++--------------+ +-------------------+ +-----------+ +------------+
+| racing-drone | | interceptor-drone | | isr-drone | | nano-drone | ...  Mission
++--------------+ +-------------------+ +-----------+ +------------+
+        |                  |                 |              |
+        v                  v                 v              v
++---------------------+ +---------------------+ +---------------------+
+|    Branes Cortex    | |   Branes Synapse    | |    Branes Reflex    |  Platform
+| perception (VIO,    | | tensor graph engine | | stabilization, MPC, |
+| SLAM), VLA, world   | | for GGUF models,    | | state propagation,  |
+| model, planning     | | static memory plan  | | fault recovery      |
++---------------------+ +---------------------+ +---------------------+
+           |                       |                       |
+           v                       v                       v
++---------------------------------+ +---------------------------------+
+|              MTL5               | |            Universal            |  Math
+| high-performance linear algebra | |       computer arithmetic       |
++---------------------------------+ +---------------------------------+
+- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
++-----------+ +-------------------+ +-------------------+ +-----------+
+|    CPU    | |     CPU + GPU     | |     CPU + KPU     | |    KPU    |  Hardware
++-----------+ +-------------------+ +-------------------+ +-----------+
+```
+
+The Branes.AI stack has four tiers:
+
+- **Mission**: one repo per vehicle and mission (`racing-drone`, `interceptor-drone`, `isr-drone`, `nano-drone`, ...). It owns the mission capability and composes platform components; algorithms do not live there.
+- **Platform**: three sister repos, `cortex`, `synapse`, and `reflex`, that provide the functionality and services a mission is built from. None of them sits above the others.
+- **Math**: [MTL5](https://github.com/stillwater-sc/mtl5) provides high-performance linear algebra and [Universal](https://github.com/stillwater-sc/universal) provides computer arithmetic (posits, intervals, mixed precision, hardware-aligned types).
+- **Hardware**: the targets the stack runs on: CPU, CPU + GPU, CPU + KPU, and KPU.
 
 ## Design principles
 

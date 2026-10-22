@@ -14,7 +14,7 @@ The Branes.AI platform follows the same split:
 | Repo | Biological analogue | Responsibility | Time scale |
 |---|---|---|---|
 | [`cortex`](https://github.com/branes-ai/cortex) | Cerebral cortex | Perception (VIO, SLAM, SfM), world building (3D scene graphs), path planning | ~5–100 Hz, best effort |
-| **`reflex`** (this repo) | Brainstem, spinal cord, autonomic system | Stabilization, trajectory tracking, optimal control, fault detection and recovery, safety envelopes | ~100 Hz–8 kHz, hard real-time |
+| **`reflex`** (this repo) | Brainstem, spinal cord, autonomic system | Stabilization, IMU state estimation, trajectory tracking, optimal control, fault detection and recovery, safety envelopes | ~100 Hz–8 kHz, hard real-time |
 | [`racing-drone`](https://github.com/branes-ai/racing-drone) | The whole organism | Mission and flight controller for an autonomous racing drone, assembled from `cortex` and `reflex` components | — |
 
 `cortex` tells the vehicle *where it should go*. `reflex` makes sure it *gets there without falling out of the sky*, and takes over when something goes wrong: a motor fails, a sensor drops out, or the planner sends a command that would leave the safe flight envelope.
@@ -34,6 +34,8 @@ The control stack grows from classical to optimal to fault-tolerant control.
 
 - Cascaded rate → attitude → velocity → position PID loops for multirotors
 - Gyro/accel filtering (low-pass, notch, RPM-based dynamic notch)
+- IMU attitude and rate estimation that keeps the vehicle stable with no input from `cortex`
+- IMU propagation of the `cortex` state estimate (VIO/LIO pose, velocity, covariance) to the control rate, with delayed-measurement fusion
 - Motor mixing, thrust/torque allocation, and actuator saturation handling
 - Anti-windup, feed-forward, and gain scheduling
 - SITL harness with a rigid-body multirotor dynamics model
@@ -53,6 +55,7 @@ The control stack grows from classical to optimal to fault-tolerant control.
 ### Phase 4: Fault tolerance and safety
 
 - Actuator and sensor fault detection and isolation (FDI)
+- State-estimate health monitoring: staleness and innovation (NIS) gating of the `cortex` estimate, so a lost or diverged VIO/LIO is treated as a sensor fault
 - Control reallocation after rotor/motor loss (for example, stable reduced-authority flight on three rotors)
 - Safety envelopes and command filtering between `cortex` and the actuators
 - Graceful degradation ladder: full mission → hold → return/land → terminal failsafe

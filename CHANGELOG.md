@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.4](https://github.com/branes-ai/reflex/compare/v0.1.3...v0.1.4) (2026-10-24)
+
+
+### Documentation
+
+* **readme:** four-tier stack diagram ([#14](https://github.com/branes-ai/reflex/issues/14)) ([602c79f](https://github.com/branes-ai/reflex/commit/602c79fa5962a1d535c155320825246dcc20888b))
+* **readme:** qualify hardware targets and explain the stack diagram arrows ([#16](https://github.com/branes-ai/reflex/issues/16)) ([ed20446](https://github.com/branes-ai/reflex/commit/ed20446e5840bedf114a03ac858c810e89dd572a))
+* **roadmap:** add IMU state estimation and VIO/LIO health monitoring ([#13](https://github.com/branes-ai/reflex/issues/13)) ([e83695c](https://github.com/branes-ai/reflex/commit/e83695cd62c20b95f6ce22cb82a13e219219fb9b))
+
 ## [0.1.3](https://github.com/branes-ai/reflex/compare/v0.1.2...v0.1.3) (2026-10-08)
 
 

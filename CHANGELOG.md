@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/branes-ai/reflex/compare/v0.1.4...v0.1.5) (2026-10-25)
+
+
+### Build System
+
+* **deps:** bump MTL5 to v5.20.0 and Universal to v5.11.0 ([#22](https://github.com/branes-ai/reflex/issues/22)) ([b2a0268](https://github.com/branes-ai/reflex/commit/b2a02686d8888f7b94571a73cb5eebcac80b2f12)), closes [#17](https://github.com/branes-ai/reflex/issues/17)
+
 ## [0.1.4](https://github.com/branes-ai/reflex/compare/v0.1.3...v0.1.4) (2026-10-24)
 
 

@@ -354,7 +354,29 @@ TEMPLATE_TEST_CASE(
     }
 }
 
-TEST_CASE("S4: IEEE binary16 cannot represent RP-1, so I1 rejects it", "[model]") {
-    // k_f = 8.9e-7 is below binary16's smallest normal number (6.1e-5).
-    REQUIRE_FALSE(quadrotor_params_valid(rp1<binary16>()));
+TEST_CASE("I1 rejects subnormal parameters, and binary16 cannot represent RP-1's k_f", "[model]") {
+    // A positive subnormal passes "> 0" but overflows 1/m, 1/tau, 1/J.
+    const double tiny = std::numeric_limits<double>::denorm_min();
+    auto p = rp1<double>();
+    p.mass = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.motor_time_constant = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.inertia[2] = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.drag_linear[0] = tiny;  // may be zero, but not subnormal
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p.drag_linear[0] = 0.0;
+    REQUIRE(quadrotor_params_valid(p));
+
+    // binary16: only k_f out of range. 1e5 J would overflow binary16, so
+    // the capacity is set to a representable value to isolate k_f.
+    auto h = rp1<binary16>();
+    h.battery_capacity = binary16(1000);
+    REQUIRE_FALSE(quadrotor_params_valid(h));  // k_f = 8.9e-7 < 6.1e-5, binary16's smallest normal
+    h.thrust_coefficient = binary16(1e-3);
+    REQUIRE(quadrotor_params_valid(h));
 }

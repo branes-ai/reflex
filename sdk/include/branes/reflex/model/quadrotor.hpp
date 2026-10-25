@@ -110,21 +110,23 @@ struct QuadrotorParams {
     T power_coefficient{0};                                  ///< k_p: rotor power = k_p·ω³ [W / (rad/s)³]
 };
 
-/// True if `p` satisfies I1: every parameter finite, and the bounds above.
+/// True if `p` satisfies I1: every parameter finite and within the bounds
+/// above, and every nonzero parameter except ground_z a normal number of T. A
+/// subnormal positive parameter would pass "> 0" and then overflow on
+/// division (1/m, 1/τ, 1/J), so it is rejected.
 template <typename T>
 [[nodiscard]] bool quadrotor_params_valid(const QuadrotorParams<T>& p) noexcept {
     using std::isfinite;
     const T zero{0};
-    bool ok = isfinite(p.mass) && isfinite(p.arm_length) && isfinite(p.thrust_coefficient) &&
-              isfinite(p.torque_coefficient) && isfinite(p.max_thrust) && isfinite(p.motor_time_constant) &&
-              isfinite(p.gravity) && isfinite(p.ground_z) && isfinite(p.battery_capacity) && isfinite(p.battery_sag) &&
-              isfinite(p.power_coefficient);
-    ok = ok && p.mass > zero && p.arm_length > zero && p.thrust_coefficient > zero && p.torque_coefficient > zero &&
-         p.max_thrust > zero && p.motor_time_constant > zero && p.gravity > zero && p.battery_capacity > zero &&
-         p.battery_sag >= zero && p.battery_sag < T(1) && p.power_coefficient >= zero;
+    const T smallest = std::numeric_limits<T>::min();  // smallest positive normal (minpos for posits)
+    const auto positive = [&](T v) { return isfinite(v) && !(v < smallest); };
+    const auto non_negative = [&](T v) { return isfinite(v) && !(v < zero) && (!(zero < v) || !(v < smallest)); };
+    bool ok = positive(p.mass) && positive(p.arm_length) && positive(p.thrust_coefficient) &&
+              positive(p.torque_coefficient) && positive(p.max_thrust) && positive(p.motor_time_constant) &&
+              positive(p.gravity) && positive(p.battery_capacity) && non_negative(p.battery_sag) &&
+              p.battery_sag < T(1) && non_negative(p.power_coefficient) && isfinite(p.ground_z);
     for (std::size_t i = 0; i < 3; ++i) {
-        ok = ok && isfinite(p.inertia[i]) && isfinite(p.drag_linear[i]) && isfinite(p.drag_quadratic[i]) &&
-             p.inertia[i] > zero && p.drag_linear[i] >= zero && p.drag_quadratic[i] >= zero;
+        ok = ok && positive(p.inertia[i]) && non_negative(p.drag_linear[i]) && non_negative(p.drag_quadratic[i]);
     }
     return ok;
 }

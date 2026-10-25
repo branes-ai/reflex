@@ -61,8 +61,11 @@ inside each box, the rates the loops must run at, and which saturations bind.
 
 ## Performance strata
 
-A stratum is named by its operating speed: the speed the vehicle cruises or
-races at, not a burst figure. Each stratum has reference vehicles.
+A stratum is named by a nominal speed near the top of its vehicle class's
+operating envelope: the speed the class races or sprints at in normal use,
+not a one-off record run. Cruise speeds are lower; a camera drone, for
+example, is rated for endurance well below its top speed [4]. Each stratum
+has reference vehicles.
 Manufacturer and record figures are cited. Values marked **≈** are this
 guide's engineering estimates, computed from the cited figures with the
 relations in [why the parameters are what they are](#why-the-parameters-are-what-they-are).
@@ -73,7 +76,7 @@ relations in [why the parameters are what they are](#why-the-parameters-are-what
 |---|---|---|---|---|---|---|---|---|
 | **S0 ultra-slow** | 15 km/h (4 m/s) | Crazyflie 2.1 / 2.1 Brushless (research nano) | 27 g [1]; 34 g brushless [2] | 92 mm motor-to-motor [1] | 45–55 mm, 2-blade | 7×16 mm coreless brushed [1]; 08028 10000 KV brushless [2] | 1S LiPo, 7–10 min [1, 2] | ≈ 2 brushed; ≈ 3.5 brushless (4 × 30 g [2] on 34 g) |
 | **S1 slow-slow** | 30 km/h (8 m/s) | 65 mm brushless tiny whoop (BetaFPV Meteor65) | ≈ 31 g: 23 g dry [3] + 1S 300 mAh pack | 65 mm motor diagonal, ducted | 31–35 mm, 3-blade [3] | 0802, 19 500–22 000 KV, 1.8 g each [3] | 1S 300 mAh, ≈ 4.5 min [3] | ≈ 3–4 |
-| **S2 slow** | 60 km/h (17 m/s) | Consumer camera drone (DJI Mini 4 Pro) | < 249 g [4] | ≈ 250 mm diagonal, folding | ≈ 6", 2-blade, low pitch | small outrunners, efficiency-wound | 2S Li-ion, ≈ 30 min | ≈ 2 |
+| **S2 slow** | 60 km/h (17 m/s) | Consumer camera drone (DJI Mini 4 Pro: 57.6 km/h max [4]) | < 249 g [4] | ≈ 250 mm diagonal, folding | ≈ 6", 2-blade, low pitch | small outrunners, efficiency-wound | 2S Li-ion, ≈ 30 min | ≈ 2 |
 | **S3 medium** | 120 km/h (33 m/s) | 5"–6" racing quad (MonoRace A2RL 2025 drone; DCL racer) | 966 g [5]; DCL rule 850–1000 g [6] | ≥ 360 mm motor diagonal (DCL) [6] | 5.1", 3-blade [5] | 2207-class, 1750–1950 KV, ≈ 1.7–1.9 kg static thrust each [7] | 6S LiPo, ≈ 2 min | ≈ 7 (MonoRace manoeuvres reach ≈ 7 g [5]) |
 | **S4 fast** | 360 km/h (100 m/s) | Red Bull camera drone (filmed F1 at speed) | < 1 kg [8] | streamlined fuselage | high pitch; rotors up to 42 000 rpm [8] | high-KV racing motors, partly unreleased [8] | LiPo, ≈ 3 min [8] | ≈ 10+ (100 → 300 km/h in ≈ 2–4 s [8]) |
 | **S5 ultra (torpedo)** | 720 km/h (200 m/s) | Speed-record quads: Peregreen 2 / 3 / V4 | 2.77 kg (Peregreen 3) [9] | single-piece streamlined body, canted rotors | 6" (V4) [10], very high pitch | T-Motor 3115 900 KV (P2) [11]; 3120 900 KV (V4) [10] | 12S LiPo, 120 A ESCs (P2) [11]; ≈ 16 kW (P3) [9]; < 2 min | ≈ 10–15 |
@@ -81,7 +84,7 @@ relations in [why the parameters are what they are](#why-the-parameters-are-what
 **720 km/h is beyond the current record.** Peregreen V4 holds the Guinness
 quadcopter record at 657.59 km/h, set on 11 December 2025 [10, 12]. Peregreen
 3 flew 585 km/h on about 16 kW [9]. S5 is therefore a projection: holding the
-Peregreen 3 drag area, 200 m/s needs about **30 kW** of shaft power
+Peregreen 3 drag area, 200 m/s needs about **30 kW** of electrical power
 ([power ceiling](#3-the-power-ceiling)). The speed column for S5 is a
 design target, not an observed operating point.
 
@@ -91,8 +94,9 @@ design target, not an observed operating point.
 control experiments.
 
 **Why it looks like this.**
-- The vehicle is light because a 30 g vehicle is harmless and cheap to crash,
-  not because of speed.
+- The vehicle is light because low mass keeps collision energy small and
+  crashes cheap, not because of speed. Light is not harmless: spinning props
+  still cut, so flight near people still needs prop guards and separation.
 - Its speed is set by the mission and the firmware, not by physics. A 3.5
   thrust-to-weight brushless Crazyflie could fly much faster. Indoors,
   15 km/h already covers a room in two seconds, and the motion-capture or
@@ -135,7 +139,9 @@ control experiments.
 - The vehicle is optimized for **endurance**, not agility. It uses large,
   low-pitch, low-disc-loading props, low-KV efficient motors, Li-ion cells,
   and a thrust-to-weight ratio near 2.
-- 16 m/s is enough to fight a 10 m/s wind with margin.
+- The class tops out near the stratum speed (16 m/s, 57.6 km/h, in sport
+  mode [4]), enough to fight a 10 m/s wind with margin. It cruises far
+  slower: DJI rates the maximum flight time at 21.6 km/h [4].
 - Regulation drives the mass: 249 g is the threshold for lighter rules in
   many jurisdictions [4].
 
@@ -197,9 +203,10 @@ interception.
   compromise between launch acceleration and top speed.
 
 **Control character.**
-- The vehicle flies at **near-90° tilt** for long periods, so attitude
-  representation is no longer optional. Euler angles are singular at
-  90° pitch, and the controller must work on $SO(3)$ or with quaternions.
+- The vehicle flies at **high tilt** (≈ 70–85°) for long periods, and its
+  envelope reaches toward 90°, so attitude representation is no longer
+  optional. Euler angles are singular at 90° pitch, and the controller must
+  work on $SO(3)$ or with quaternions.
 - The body produces aerodynamic lift and moments that the rotors must trim.
   Gains that suit hover are wrong at 6 kPa, so **gain scheduling with dynamic
   pressure** (or with airspeed) is needed.
@@ -216,9 +223,16 @@ multirotor flight.
 **Why it looks like this.** Every design choice serves top speed in a
 straight line:
 - The rotors are canted forward relative to a torpedo-shaped body, so the
-  body is aligned with the airflow at the cruise tilt. The vehicle cruises
-  at $\theta = \arccos(1/n)$, roughly 84° for $n = 10$, where thrust balances
-  weight vertically and drag horizontally.
+  body is aligned with the airflow at the cruise tilt. Here $\theta$ is the
+  tilt of the rotor thrust from vertical; because of the cant, the body
+  attitude differs from it.
+  - At the drag–thrust limit, full thrust gives
+    $\theta_{max} = \arccos(1/n)$, roughly 84° for $n = 10$.
+  - That is a limit, not the cruise point. With the drag area estimated in
+    the [power ceiling](#3-the-power-ceiling) and Peregreen 3's 2.77 kg, drag
+    at 200 m/s is about 76 N against 27 N of weight, so the rotor-thrust tilt
+    is $\arctan(D/mg) \approx 70°$ before body lift (≈). S5 is limited by
+    power and tip Mach, not by the drag–thrust balance.
 - Props are small (6" on V4 [10]) with very high pitch, on 900 KV motors at
   high voltage.
 - Batteries are chosen for power density, not energy. Peregreen 3 draws
@@ -291,15 +305,20 @@ $$
 
 ### 3. The power ceiling
 
-The power to overcome body drag is
-$P = \tfrac12 \rho\, C_D A\, v^3 / \eta$, where $\eta$ is the propulsive
-efficiency.
+The electrical power to overcome body drag is
+$P_{el} = \tfrac12 \rho\, C_D A\, v^3 / \eta$, where
+$\eta = \eta_{ESC}\,\eta_{motor}\,\eta_{prop}$ is the overall
+electrical-to-thrust-power efficiency.
 
-- **Anchoring the drag area.** Peregreen 3's 16.2 kW at 162.5 m/s [9] with
-  $\eta \approx 0.6$ implies $C_D A \approx 0.0037\ \mathrm{m^2}$. That is
-  about a 10 × 10 cm frontal area at $C_D \approx 0.37$ (≈).
-- **At 200 m/s** the same body needs about 30 kW: 1.86 times the power for
-  1.23 times the speed (≈).
+- **Anchoring the drag area.** The 16.2 kW reported for Peregreen 3 [9] is
+  taken as electrical draw at 162.5 m/s. With $\eta \approx 0.5$ (about
+  0.85 for ESC and motor times 0.6 for the propeller) it implies
+  $C_D A \approx 0.0031\ \mathrm{m^2}$, about a 9 × 9 cm frontal area at
+  $C_D \approx 0.37$ (≈).
+- **At 200 m/s** the same body and efficiency need about 30 kW of electrical
+  power: 1.86 times the power for 1.23 times the speed (≈). The ratio holds
+  for any $\eta$ that stays constant; the drag area itself scales with the
+  assumed $\eta$.
 - **Consequences.** The battery and ESCs are sized for peak power, the
   vehicle is heavier, and flight time is minutes.
 
@@ -329,7 +348,7 @@ speed, and the motors that deliver 16 kW have mass of their own.
 | Dynamic pressure $q$ [Pa] | 11 | 43 | 170 | 680 | 6 100 | 24 500 |
 | Travel in 10 ms | 4 cm | 8 cm | 17 cm | 33 cm | 1.0 m | 2.0 m |
 | Turn radius at 5 g | 0.4 m | 1.4 m | 5.7 m | 23 m | 200 m | 820 m |
-| Typical tilt in flight | < 20° | < 45° | < 35° | up to 80° | 80–90° | 84–88° |
+| Typical rotor-thrust tilt | < 20° | < 45° | < 35° | up to 80° | ≈ 70–85° | ≈ 70° at 200 m/s, before body lift |
 | Binding ceiling | mission | mission / drag | mission / endurance | pitch speed, thrust | drag, pitch | power, tip Mach |
 | Is $T = k_f\omega^2$ adequate? | yes | yes | yes, with care | no: rotor drag, $C_T(J)$ | no | no: transonic |
 
@@ -344,7 +363,10 @@ speed, and the motors that deliver 16 kW have mass of their own.
 - battery sag;
 - ground contact.
 
-That set is adequate for **S0–S2**, and for S3 at low speed. Above about
+That set is adequate for **S0–S2 in free flight away from surfaces**, and
+for S3 at low speed. It has ground contact but no ground or ceiling effect
+(E4), which is critical for S0 and S1, so near-surface scenarios in those
+strata are *model-limited* until E4 lands. Above about
 15 m/s the effects listed under [aerodynamic model terms](#e-aerodynamic-model-terms)
 become first-order, and SITL results there must be read as optimistic until
 they are modelled. Each term is a separate model feature with its own verification and
@@ -460,7 +482,7 @@ loop.
 - **Implement:** `control/attitude_controller.hpp`.
 - **Test:**
   - Large-angle steps of 180° in roll and pitch.
-  - Hold at 85° tilt.
+  - Hold at 85° tilt, as an envelope stress case beyond the S5 cruise tilt.
   - Continuity of the error through the antipodal quaternion.
 - **Strata:** S0 ○ · S1 ● · S2 ○ · S3 ● · S4 ● · S5 ●
 

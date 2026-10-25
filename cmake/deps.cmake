@@ -45,9 +45,9 @@ endif()
 #   -DFETCHCONTENT_SOURCE_DIR_UNIVERSAL=/path/to/universal
 #
 # Third-party warnings: reflex builds its own targets with strict warnings as
-# errors (cmake/warnings.cmake), and MTL5 v5.12.0 / Universal v5.1.0 headers
-# emit 14 warning sites under that set (-Wshadow, -Wunused-local-typedefs,
-# -Wpedantic, -Wfloat-conversion; 9 in MTL5, 5 in Universal, none in reflex).
+# errors (cmake/warnings.cmake), and MTL5 v5.20.0 / Universal v5.11.0 headers
+# emit 12 warning sites under that set with GCC (-Wshadow, -Wunused-local-typedefs,
+# -Wpedantic, -Wfloat-conversion; 7 in MTL5, 5 in Universal, none in reflex).
 # Left visible, they would fail every build on code we don't own, so the
 # fetched targets are SYSTEM by default (find_package's imported targets are
 # SYSTEM already). The Stillwater repos keep them visible to drive the
@@ -55,8 +55,8 @@ endif()
 # with -DREFLEX_SHOW_DEP_WARNINGS=ON --compile-no-warning-as-error.
 option(REFLEX_SHOW_DEP_WARNINGS "Treat MTL5/Universal headers as non-system (show their warnings)" OFF)
 
-set(REFLEX_MTL5_VERSION      5.12.0)
-set(REFLEX_UNIVERSAL_VERSION 5.1.0)
+set(REFLEX_MTL5_VERSION      5.20.0)
+set(REFLEX_UNIVERSAL_VERSION 5.11.0)
 
 if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
     find_package(MTL5 CONFIG QUIET)

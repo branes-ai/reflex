@@ -84,6 +84,7 @@ export default defineConfig({
           items: [
             { label: 'Quadrotor Control Guide', slug: 'control/quadrotor-control' },
             { label: 'PID Controller', slug: 'control/pid' },
+            { label: 'Mixer', slug: 'control/mixer' },
           ],
         },
         {

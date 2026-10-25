@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/branes-ai/reflex/compare/v0.1.5...v0.2.0) (2026-10-25)
+
+
+### Features
+
+* **model:** rigid-body quadrotor dynamics model for sitl and mpc ([#24](https://github.com/branes-ai/reflex/issues/24)) ([b5a0ce8](https://github.com/branes-ai/reflex/commit/b5a0ce85844e704eaf6e2b0dba0d4df65bd88845))
+
 ## [0.1.5](https://github.com/branes-ai/reflex/compare/v0.1.4...v0.1.5) (2026-10-25)
 
 

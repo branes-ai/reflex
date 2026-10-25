@@ -74,6 +74,12 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Model',
+          items: [
+            { label: 'Quadrotor Model', slug: 'model/quadrotor' },
+          ],
+        },
+        {
           label: 'Control',
           items: [
             { label: 'PID Controller', slug: 'control/pid' },

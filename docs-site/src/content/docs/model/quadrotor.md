@@ -5,6 +5,10 @@ description: branes::reflex::model::QuadrotorModel — rigid-body quadrotor dyna
 
 `#include <branes/reflex/model/quadrotor.hpp>`
 
+**Grade: below C** under the [building block standard](/standards/building-blocks/):
+one C requirement, the worst-case timing behaviour (S5), is open. The
+[V&V plan](/model/quadrotor-vv/) covers the path to A+.
+
 `branes::reflex::model::QuadrotorModel<T>` is the quadrotor model behind
 software-in-the-loop simulation and, later, the model-predictive controllers.
 It is a pure function of (state, command, dt): the same inputs give

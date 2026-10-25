@@ -74,9 +74,16 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Standards',
+          items: [
+            { label: 'Building Block Standard', slug: 'standards/building-blocks' },
+          ],
+        },
+        {
           label: 'Model',
           items: [
             { label: 'Quadrotor Model', slug: 'model/quadrotor' },
+            { label: 'Quadrotor V&V Plan', slug: 'model/quadrotor-vv' },
           ],
         },
         {

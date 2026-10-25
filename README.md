@@ -145,7 +145,12 @@ reflex/
 
 ## Status
 
-Early stage. Phase 1 has started: a PID controller with derivative-on-measurement, derivative filtering, integral clamping, and anti-windup (`sdk/include/branes/reflex/control/pid.hpp`). Cascaded multirotor loops, filtering, and the SITL harness come next.
+Early stage. Phase 1 has started:
+
+- a PID controller with derivative-on-measurement, derivative filtering, integral clamping, and anti-windup (`sdk/include/branes/reflex/control/pid.hpp`);
+- a rigid-body quadrotor model, with rotor and motor dynamics, drag, battery sag, and ground contact, on MTL5 fixed-size types (`sdk/include/branes/reflex/model/quadrotor.hpp`).
+
+The mixer, the cascaded multirotor loops, and filtering come next.
 
 ## License
 

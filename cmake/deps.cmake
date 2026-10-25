@@ -4,12 +4,12 @@
 # intentional; bumps go via dedicated PRs so the release-please changelog
 # records dependency churn separately from feature work.
 #
-# The reflex library itself (branes::reflex) has no third-party dependencies
-# yet; everything here is for tests, examples, and benchmarks, and is only
-# fetched when tests are built (FetchContent consumers of reflex pull nothing).
-# MTL5 joins branes::reflex's interface when the first linear-algebra
-# component (LQR / QP) lands; Universal stays test-only, since the controllers
-# are generic and never name a Universal type.
+# MTL5 is part of branes::reflex's interface: the quadrotor model (and the
+# linear-algebra components after it) use its fixed-size, stack-allocated
+# vectors and matrices, so it is fetched for every build, including
+# FetchContent consumers. Catch2 and Universal are fetched only when tests are
+# built; Universal stays test-only, since the components are generic and never
+# name a Universal type.
 
 include(FetchContent)
 
@@ -58,7 +58,9 @@ option(REFLEX_SHOW_DEP_WARNINGS "Treat MTL5/Universal headers as non-system (sho
 set(REFLEX_MTL5_VERSION      5.20.0)
 set(REFLEX_UNIVERSAL_VERSION 5.11.0)
 
-if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
+# Guarded: a consumer that also pulls in another Stillwater / Branes repo may
+# already have created MTL5::mtl5 (FetchContent resolves each dependency once).
+if(NOT TARGET MTL5::mtl5)
     find_package(MTL5 CONFIG QUIET)
     if(MTL5_FOUND)
         message(STATUS "MTL5: using installed package ${MTL5_VERSION} (${MTL5_DIR})")
@@ -101,7 +103,9 @@ if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
             set_target_properties(mtl5 PROPERTIES SYSTEM ON)
         endif()
     endif()
+endif()
 
+if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
     find_package(universal CONFIG QUIET)
     if(universal_FOUND)
         message(STATUS "Universal: using installed package ${universal_VERSION} (${universal_DIR})")

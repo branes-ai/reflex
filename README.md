@@ -148,9 +148,10 @@ reflex/
 Early stage. Phase 1 has started:
 
 - a PID controller with derivative-on-measurement, derivative filtering, integral clamping, and anti-windup (`sdk/include/branes/reflex/control/pid.hpp`);
-- a rigid-body quadrotor model, with rotor and motor dynamics, drag, battery sag, and ground contact, on MTL5 fixed-size types (`sdk/include/branes/reflex/model/quadrotor.hpp`).
+- a rigid-body quadrotor model, with rotor and motor dynamics, drag, battery sag, and ground contact, on MTL5 fixed-size types (`sdk/include/branes/reflex/model/quadrotor.hpp`);
+- a Quad X mixer that allocates thrust and torque to the rotors, giving up yaw, then collective thrust, then roll and pitch under saturation (`sdk/include/branes/reflex/control/mixer.hpp`).
 
-The mixer, the cascaded multirotor loops, and filtering come next.
+The cascaded multirotor loops and filtering come next.
 
 ## License
 

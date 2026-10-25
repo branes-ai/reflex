@@ -30,7 +30,7 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | S2 envelope | ❌ | Non-modelled effects and expected ranges not stated |
 | S3 parameters | ✅ | `quadrotor_params_valid`, units, RP-1 defaults from `vehicles/rp1.yaml` |
 | S4 scalar types | ❌ | I2 tolerance hard-coded to 1e-6 (see [findings](#findings-that-shape-the-plan)); only float and double tested |
-| S5 resource | ✅ | Pure, no allocation, no exceptions, documented in the header; determinism tested |
+| S5 resource | ◐ | Pure, no allocation, no exceptions, documented in the header; determinism tested. No worst-case execution-time bound stated or tested: the bench reports a mean |
 | T1 unit | ✅ | `tests/sdk/quadrotor_model.cpp`, 12 cases |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
@@ -52,7 +52,8 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | R1, R4 | ◐ | release-please semver; no golden traces |
 | R2, R3 | ❌ | — |
 
-**Grade today: C.**
+**Grade today: below C.** Every C requirement except S5 is met. S5 lacks a
+stated and tested worst-case execution-time bound, which M1 adds.
 
 The integration requirements are written BB-I1 to BB-I6 throughout, so
 they are not confused with the model's invariants I1–I5.
@@ -62,12 +63,14 @@ they are not confused with the model's invariants I1–I5.
 A one-off probe on 2026-10-25 used non-symmetric inertia, linear and
 quadratic drag, initial rates (2, −1, 3) rad/s, and a constant differential
 command. It ran for 0.64 s against a reference at dt = τ/1024 (double, GCC
-`-O2`):
+`-O2`, contracts compiled out). The 20 ms row is outside `step()`'s contract
+(dt ≤ 10 ms) and is shown only as the first point of the sweep. The orders
+from 5 ms down use in-contract points only.
 
 | dt | position err | p | body-rate err | p |
 |---|---|---|---|---|
-| 20 ms | 1.58e-5 | — | 5.79e-5 | — |
-| 10 ms | 6.97e-7 | 4.50 | 2.46e-6 | 4.55 |
+| 20 ms (out of contract) | 1.58e-5 | — | 5.79e-5 | — |
+| 10 ms | 6.97e-7 | (4.50) | 2.46e-6 | (4.55) |
 | 5 ms | 3.73e-8 | 4.23 | 1.30e-7 | 4.24 |
 | 2.5 ms | 2.17e-9 | 4.10 | 7.49e-9 | 4.12 |
 | 1.25 ms | 1.29e-10 | 4.07 | 4.51e-10 | 4.05 |
@@ -120,6 +123,13 @@ roundoff. Both are covered in [WS2](#ws2-verification).
   that the minimum is 24-bit significand precision. Document the choice and
   test it.
 - Add `quadrotor_state_violation()` (finding 3).
+- Complete S5 with a worst-case execution-time statement. `step()` has a
+  fixed operation count: four `derivative()` calls, no data-dependent loops,
+  and one contact branch. Its time is bounded except for subnormal operands,
+  which are slow on x86. Either state the bound with flush-to-zero required
+  of the caller, or measure the subnormal case. Extend `quadrotor_bench` to
+  report p99.9 and maximum latency over generated valid states, including
+  values near the subnormal range, alongside the mean.
 
 ### WS2. Verification
 
@@ -147,7 +157,8 @@ the probe:
 - The test samples at t = 2τ, so the rotor speeds are still moving.
 - Attitude error is $2\,\mathrm{asin}(\lVert \mathrm{vec}(q_a^{-1} \otimes q_b)\rVert)$,
   never `acos` of a dot product.
-- Sweep dt over τ, τ/2, …, τ/32 against τ/1024, and fit p on pairs whose
+- Sweep dt over h₀, h₀/2, …, h₀/32 with h₀ = min(10 ms, τ), so that every
+  point is inside `step()`'s contract, against h₀/1024. Fit p on pairs whose
   error exceeds 1e3 × the roundoff floor.
 - Pass: p ∈ [3.7, 4.4] for position, velocity, attitude, rates, and rotor
   speeds, in double. Float runs the same sweep with a floor at 1e3 ε.
@@ -169,8 +180,8 @@ airborne state through 0.5 s of random piecewise-constant commands:
 |---|---|---|
 | World yaw | Rotate the initial state by ψ about world z | Trajectory rotated by ψ; rates and rotor speeds unchanged |
 | Translation | Shift x, y (and z above ground) | Trajectory shifted |
-| Body 180° yaw | Swap commands 0↔1 and 2↔3; rotate the initial attitude by π about body z and negate the initial x, y rates | Same world trajectory; body x, y rates negated |
-| Mirror | Reflect y → −y; swap commands 0↔2 and 1↔3; q → (w, −x, y, −z) | Mirrored trajectory; roll and yaw rates negate |
+| Body 180° yaw | Swap commands and initial rotor speeds 0↔1 and 2↔3; rotate the initial attitude by π about body z and negate the initial x, y rates | Same world trajectory; body x, y rates negated; rotor speeds permuted |
+| Mirror | Reflect y → −y; swap commands and initial rotor speeds 0↔2 and 1↔3; q → (w, −x, y, −z) | Mirrored trajectory; roll and yaw rates negate; rotor speeds permuted |
 | Mass scaling | Scale m, J, k_f, `max_thrust`, and drag by α (ω_max unchanged) | Identical kinematics; energy excluded unless k_p is scaled too |
 
 The tolerance is a few hundred ε times the trajectory norm. Rotations
@@ -201,8 +212,12 @@ dual matches the closed form to 1e-12.
 The test also checks the discrete step Jacobian against $\exp(A\,dt)$ (Taylor
 series, 16×16) to $O(dt^5)$ at hover. The MPC may use either.
 
-**`quadrotor_stability.cpp` (V7).** For a pure motor step, bisect the
-largest dt at which the rotor error decays. Pass: the limit is within 2 % of
+**`quadrotor_stability.cpp` (V7).** The stability limit lies outside
+`step()`'s contract (dt ≤ min(10 ms, τ)), so `step()` cannot probe it
+without tripping its precondition. The test drives the motor-lag equation
+from `derivative()` through a test-only RK4 driver, and checks that the
+driver matches `step()` bit for bit inside the contract. For a pure motor
+step, bisect the largest dt at which the rotor error decays. Pass: the limit is within 2 % of
 2.785 τ, which confirms the contract's dt ≤ τ margin. Confirm also that for
 dt ≤ τ the rotor response never overshoots (RK4's amplification factor at
 z = −1 is 0.375 > 0).
@@ -221,7 +236,11 @@ z = −1 is 0.375 > 0).
   2. Purity: the same inputs give the same bits, in any call order.
   3. Energy is non-decreasing.
   4. Rotor speeds move toward the clamped command without overshoot.
-  5. A grounded vehicle with sub-weight thrust is a fixed point.
+  5. Ground contact: a grounded vehicle with sub-weight vertical thrust
+     keeps its position and attitude, has zero velocity and body rates, and
+     stays grounded. It is not a fixed point of the full state: its rotor
+     speeds still follow the command (property 4) and its energy still
+     accrues (property 3).
   6. `derivative()` is finite for every valid state.
   7. Validators reject NaN, ±inf, and each bound by one ulp. They also accept
      −0 and subnormals where the bound allows.
@@ -328,14 +347,24 @@ git-ignored cache. Check each license before any derived data is committed.
    flight 70/30. It reports the parameter covariance, which feeds C5b.
 3. **Replay.** The C++ executable `validate/quadrotor/replay` reads each
    flight segment and outputs model predictions. The model is never
-   re-implemented in Python.
+   re-implemented in Python. It has two modes:
+   - **Measured-state replay** isolates the rigid body and aerodynamics.
+     Measured rotor speeds must not be passed as `RotorCommand`, because
+     `step()` treats commands as motor-lag targets and the replayed thrust
+     would lag the log. Instead, a replay driver integrates `derivative()`
+     with RK4, sets `QuadrotorState::rotor_speeds` at each stage from the
+     log, interpolated, and discards the rotor-speed derivative. A test
+     checks that the driver agrees with `step()` when the logged speeds are
+     constant and equal to the command.
+   - **Command replay** calls `step()` with the logged commands, and so
+     evaluates the motor model as well.
 4. **Metrics (L3).** Two families:
    - **Force and torque residuals.** Accelerometer specific force against
      $F_b/m$, and differentiated gyro against $\dot\omega$: RMSE and NRMSE,
      binned by airspeed, body rate, and thrust.
-   - **Open-loop prediction.** From each sample, roll the model forward with
-     *measured* rotor speeds (isolating the rigid body and aerodynamics) and,
-     where commands are logged, with *commands* (adding the motor model).
+   - **Open-loop prediction.** From each sample, roll the model forward in
+     measured-state replay and, where commands are logged, in command
+     replay.
      Report position, velocity, and attitude error percentiles at 50, 100,
      250, and 500 ms.
 5. **Envelope (L4).** The region of (airspeed, body rate, thrust) where the
@@ -486,7 +515,7 @@ Each milestone is one or two PRs and ends at a grade.
 
 | # | PR scope | Workstreams | Grade after |
 |---|---|---|---|
-| M1 | Envelope section, I2 tolerance decision, `quadrotor_state_violation()` | WS1 | C |
+| M1 | Envelope section, I2 tolerance decision, `quadrotor_state_violation()`, worst-case timing statement and bench | WS1 | **C** |
 | M2 | `tests/verification/`: analytic, convergence, structure, stability, metamorphic | WS2 (V1–V4, V7) | C |
 | M3 | Sanitizer preset and job, RapidCheck property suite, golden traces with `trace_diff` | WS3 (T3, T4), WS6 (D3), WS8 (R4) | **B** |
 | M4 | Jacobian harness with the dual-number type | WS2 (V5) | B |

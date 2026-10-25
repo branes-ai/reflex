@@ -448,3 +448,26 @@ TEST_CASE("cascade: attitude mode bypasses the position loop; feedback stores th
     REQUIRE(cascade.saturation().thrust == 0);
     REQUIRE(cascade.rate_setpoint()(0) == 0.0);
 }
+
+TEST_CASE("cascade: switching from attitude to position mode drops the attitude-mode target at once", "[cascade]") {
+    const auto p = rp1<double>();
+    Cascade<double> cascade(cascade_config_from(p));
+    const AttitudeTarget<double> manual{from_rotation_vector(vec3(1.0, 0.0, 0.0)), 0.5 * p.mass * p.gravity};
+    for (int i = 0; i < 7; ++i) {  // leave the schedule mid-period
+        (void)cascade.update(VehicleState<double>{}, manual, 1e-3);
+    }
+    PositionSetpoint<double> sp;  // hold the origin, where the vehicle is
+    const Wrench<double> w = cascade.update(VehicleState<double>{}, sp, 1e-3);
+    REQUIRE_THAT(w.thrust, WithinAbs(p.mass * p.gravity, 1e-12));  // the position loop ran on this tick
+    REQUIRE_THAT(tilt_between(cascade.target().attitude, Quat<double>{}), WithinAbs(0.0, 1e-7));
+    REQUIRE_THAT(cascade.rate_setpoint()(0), WithinAbs(0.0, 1e-12));  // and the attitude loop with it
+    REQUIRE(cascade.position().axis(2).integral() == 0.0);
+}
+
+TEST_CASE("cascade: derived gains are valid iff thrust-to-weight exceeds 1.25", "[cascade]") {
+    auto p = rp1<double>();
+    p.max_thrust = 1.3 * p.mass * p.gravity / 4.0;
+    REQUIRE(cascade_config_valid(cascade_config_from(p)));
+    p.max_thrust = 1.2 * p.mass * p.gravity / 4.0;  // 0.8 · 4 · T_max = 0.96 m g: cannot hover in the limit
+    REQUIRE_FALSE(cascade_config_valid(cascade_config_from(p)));
+}

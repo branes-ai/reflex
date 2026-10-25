@@ -25,6 +25,7 @@
 ///     wrench_     : Wrench<T> — the last wrench returned
 ///     saturation_ : Saturation — the mixer's report for wrench_
 ///     tick_       : unsigned — rate-loop ticks since the last position tick
+///     position_mode_ : bool — the last update() was in position mode
 ///
 /// Invariants
 /// ----------
@@ -110,7 +111,11 @@ template <typename T>
 }
 
 /// Default gains and limits for vehicle `p` (see the file comment).
-/// Pre: model::quadrotor_params_valid(p).
+/// Pre:  model::quadrotor_params_valid(p).
+/// Post: cascade_config_valid(result) holds iff the vehicle can hover inside
+///       the derived collective limit, 0.8·4·T_max > m·g (thrust-to-weight
+///       above 1.25). A weaker vehicle gets a config that fails the validator,
+///       so callers check cascade_config_valid() before building a Cascade.
 template <typename T>
 [[nodiscard]] CascadeConfig<T> cascade_config_from(const model::QuadrotorParams<T>& p) {
     using std::sqrt;
@@ -177,12 +182,20 @@ public:
     ///
     /// Pre:  x finite with a unit attitude; sp finite; dt > 0 (dt ≤ 0 returns
     ///       the last wrench and changes nothing).
-    /// Post: I1–I4; the returned wrench is {target().thrust, torque}.
+    /// Post: I1–I4; the returned wrench is {target().thrust, torque}. On the
+    ///       first tick after attitude mode, the position loop restarts from
+    ///       reset and the schedule realigns, so the position and attitude
+    ///       loops both run on that tick and no attitude-mode target is held.
     ///
     /// @param dt  the rate-loop period [s]; the outer loops run at multiples of it
     [[nodiscard]] Wrench<T> update(const VehicleState<T>& x, const PositionSetpoint<T>& sp, T dt) {
         if (!(T(0) < dt)) {
             return wrench_;
+        }
+        if (!position_mode_) {
+            position_.reset();  // its integrators and cuts predate attitude mode
+            tick_ = 0;
+            position_mode_ = true;
         }
         if (tick_ == 0) {
             target_ = position_.update(
@@ -201,6 +214,7 @@ public:
             return wrench_;
         }
         target_ = target;
+        position_mode_ = false;
         return inner(x, dt);
     }
 
@@ -219,6 +233,7 @@ public:
         wrench_ = Wrench<T>{target_.thrust, zero3<T>()};
         saturation_ = Saturation{};
         tick_ = 0;
+        position_mode_ = true;
         assert(check_invariant());
     }
 
@@ -278,6 +293,7 @@ private:
     Wrench<T> wrench_{};
     Saturation saturation_{};
     unsigned tick_{0};
+    bool position_mode_{true};
 };
 
 }  // namespace branes::reflex::control

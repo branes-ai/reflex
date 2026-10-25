@@ -207,7 +207,7 @@ TEMPLATE_TEST_CASE("1 m step in x and in z: overshoot <= 10 %, within 2 % by 3 s
     }
 }
 
-TEST_CASE("waypoint square, 10 m sides at up to 5 m/s: cross-track RMS <= 0.3 m, max <= 0.6 m",
+TEST_CASE("waypoint square, 10 m sides, commanded peak 5 m/s: cross-track RMS <= 0.3 m, max <= 0.6 m",
           "[cascade][closed-loop]") {
     // Each leg is a triangle speed profile: 2.5 m/s² to 5 m/s at mid-leg and
     // back to rest at the corner, with velocity and acceleration feed-forward.
@@ -265,7 +265,7 @@ TEST_CASE("waypoint square, 10 m sides at up to 5 m/s: cross-track RMS <= 0.3 m,
     }
     const double rms = std::sqrt(sum2 / n);
     INFO("cross-track RMS " << rms << " m, max " << worst << " m, top speed " << top_speed << " m/s");
-    REQUIRE(top_speed > 4.5);  // the scenario really flies near 5 m/s
+    REQUIRE(top_speed > 4.5);  // the commanded peak is 5 m/s; the flown top speed is within 10 %
     REQUIRE(top_speed < 5.5);
     REQUIRE(rms <= 0.3);
     REQUIRE(worst <= 0.6);

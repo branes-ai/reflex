@@ -53,8 +53,9 @@ setpoint and skips the position loop (attitude mode).
 
 **Rate** (`rate.hpp`). One PID per body axis outputs angular acceleration,
 and the torque is τ = J·α + ω × Jω. Because the gains act on acceleration,
-they are in 1/s and one loop shape carries across vehicle sizes; the
-ω × Jω term cancels the plant's gyroscopic coupling.
+they do not depend on the vehicle's inertia (k_p in 1/s, k_i in 1/s², k_d
+dimensionless), so one loop shape carries across vehicle sizes; the ω × Jω
+term cancels the plant's gyroscopic coupling.
 
 **Attitude** (`attitude.hpp`). Tilt-prioritized control after Brescianini and
 D'Andrea. The error q_e = q⁻¹ ⊗ q_sp is split into a tilt q_red, which moves
@@ -97,8 +98,12 @@ separation, starting from the motor lag τ (ω_n = 1/τ):
 | Velocity | k_v = ω_n/14, k_i = k_v²/10, integral ≤ g/2 | The integral bound covers a 33 % hover-thrust error |
 | Position | ω_n/32 | With the velocity loop, ζ ≈ 0.76 |
 
-The header derives each choice. To use other gains, fill a `CascadeConfig`
-directly; every config passes through a validator.
+The header derives each choice. The derived config is valid only for a
+vehicle whose thrust-to-weight ratio exceeds 1.25 (the collective limit is
+80 % of full thrust). To use other gains, fill a `CascadeConfig` directly.
+Either way, check it with `cascade_config_valid()` before constructing a
+`Cascade`: the constructor only asserts validity, and release builds compile
+the assertion out.
 
 ## What the evidence shows
 
@@ -128,7 +133,7 @@ flies a real vehicle. Three measures keep the claim honest:
 | 180° roll step | Within 2° by 1.5 s; −q flies identically |
 | Tilt and yaw step | The tilt converges as fast as with no yaw step |
 | 1 m step in x and in z | Overshoot ≤ 10 %, within 2 % by 3 s |
-| Waypoint square, 10 m sides, ≤ 5 m/s | Cross-track RMS ≤ 0.3 m, max ≤ 0.6 m |
+| Waypoint square, 10 m sides, commanded peak 5 m/s | Cross-track RMS ≤ 0.3 m, max ≤ 0.6 m; the flown top speed is within 10 % of the commanded peak |
 | 2 s of thrust saturation | Overshoot within 5 points of an unsaturated step |
 
 Validation needs flight data. The scenarios move to the `sim/` closed-loop

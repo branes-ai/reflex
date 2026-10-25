@@ -30,7 +30,7 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | S2 envelope | ❌ | Non-modelled effects and expected ranges not stated |
 | S3 parameters | ✅ | `quadrotor_params_valid`, units, RP-1 defaults from `vehicles/rp1.yaml` |
 | S4 scalar types | ❌ | I2 tolerance hard-coded to 1e-6 (see [findings](#findings-that-shape-the-plan)); only float and double tested |
-| S5 resource | ◐ | Pure, no allocation, no exceptions, documented in the header; determinism tested. No worst-case execution-time bound stated or tested: the bench reports a mean |
+| S5 resource | ◐ | Pure, no allocation, no exceptions, documented in the header; determinism tested. Worst-case execution-time behaviour neither stated nor tested; the bench's mean is characterization, not a bound |
 | T1 unit | ✅ | `tests/sdk/quadrotor_model.cpp`, 12 cases |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
@@ -53,7 +53,9 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | R2, R3 | ❌ | — |
 
 **Grade today: below C.** Every C requirement except S5 is met. S5 lacks a
-stated and tested worst-case execution-time bound, which M1 adds.
+stated and tested worst-case execution-time behaviour. M1 adds the
+structural statement and its operation-count test, and M11 adds a
+processor-specific bound.
 
 The integration requirements are written BB-I1 to BB-I6 throughout, so
 they are not confused with the model's invariants I1–I5.
@@ -123,13 +125,28 @@ roundoff. Both are covered in [WS2](#ws2-verification).
   that the minimum is 24-bit significand precision. Document the choice and
   test it.
 - Add `quadrotor_state_violation()` (finding 3).
-- Complete S5 with a worst-case execution-time statement. `step()` has a
-  fixed operation count: four `derivative()` calls, no data-dependent loops,
-  and one contact branch. Its time is bounded except for subnormal operands,
-  which are slow on x86. Either state the bound with flush-to-zero required
-  of the caller, or measure the subnormal case. Extend `quadrotor_bench` to
-  report p99.9 and maximum latency over generated valid states, including
-  values near the subnormal range, alongside the mean.
+- Complete S5 in two parts, which differ in what they can claim:
+  - **Structural statement (for C).** `step()` runs a fixed sequence: four
+    `derivative()` calls, no data-dependent loops, one ground-contact branch,
+    no allocation, and no system calls. Its execution time therefore depends
+    only on the platform, the branch taken, and operand classes. Subnormal
+    operands are the known exception, because they are slow on x86. The
+    header states this, and requires flush-to-zero of callers that need a
+    time bound. A test checks it with an instrumented scalar type,
+    `Counted<double>`, that counts arithmetic operations and calls to
+    `sqrt`. Over generated valid states, the count must be identical within
+    each contact branch.
+  - **Processor-specific bound (BB-I5, M11).** A bound is only meaningful
+    for a stated scope: the RP-1 flight MCU, the compiler and its version,
+    optimization flags, floating-point mode (flush-to-zero on), and whether
+    interrupts and cache effects are included. Within that scope, measure
+    cycles per `step()` with the core's cycle counter over generated valid
+    states, including subnormal-adjacent operands. Report the maximum with a
+    stated margin as the bound. On an in-order core with fixed-latency FPU
+    instructions and the operation count fixed, that measurement is a
+    defensible bound. Static WCET analysis is optional on top of it.
+  - Host-side `quadrotor_bench` results (mean, p99.9, sampled maximum) are
+    latency characterization (C4), not S5 evidence.
 
 ### WS2. Verification
 
@@ -515,7 +532,7 @@ Each milestone is one or two PRs and ends at a grade.
 
 | # | PR scope | Workstreams | Grade after |
 |---|---|---|---|
-| M1 | Envelope section, I2 tolerance decision, `quadrotor_state_violation()`, worst-case timing statement and bench | WS1 | **C** |
+| M1 | Envelope section, I2 tolerance decision, `quadrotor_state_violation()`, structural timing statement and `Counted<double>` test | WS1 | **C** |
 | M2 | `tests/verification/`: analytic, convergence, structure, stability, metamorphic | WS2 (V1–V4, V7) | C |
 | M3 | Sanitizer preset and job, RapidCheck property suite, golden traces with `trace_diff` | WS3 (T3, T4), WS6 (D3), WS8 (R4) | **B** |
 | M4 | Jacobian harness with the dual-number type | WS2 (V5) | B |
@@ -525,7 +542,7 @@ Each milestone is one or two PRs and ends at a grade.
 | M8 | Scenario runner, invariant monitor, replay, MCAP | WS6 (D1, D2) | B |
 | M9 | `sim/` harness: sensor, actuator, and environment models; PID cascade in the loop; scenario suite; real-time mode | WS9 (BB-I1, BB-I2, BB-I4) | **A** |
 | M10 | Dataset fetch, preprocessing, sysid, replay, metrics, envelope; closed-loop sim-to-flight comparison | WS7, WS9 (BB-I3) | A |
-| M11 | Processor-in-the-loop on the RP-1 MCU; the bridge for racing-drone | WS9 (BB-I5, BB-I6) | A |
+| M11 | Processor-in-the-loop on the RP-1 MCU with the scoped timing bound; the bridge for racing-drone | WS9 (BB-I5, BB-I6), WS1 (S5 bound) | A |
 | M12 | Mutation testing, uncertainty propagation, evidence bundle, scorecard, racing-drone contract test | WS3 (T7), WS5 (C5), WS8 (R2, R3) | **A+** |
 
 M1–M3 come first: they are cheap and they reach grade B. M4 comes next

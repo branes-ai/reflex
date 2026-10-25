@@ -6,7 +6,7 @@ description: branes::reflex::model::QuadrotorModel — rigid-body quadrotor dyna
 `#include <branes/reflex/model/quadrotor.hpp>`
 
 **Grade: below C** under the [building block standard](/standards/building-blocks/):
-one C requirement, a worst-case timing bound (S5), is open. The
+one C requirement, the worst-case timing behaviour (S5), is open. The
 [V&V plan](/model/quadrotor-vv/) covers the path to A+.
 
 `branes::reflex::model::QuadrotorModel<T>` is the quadrotor model behind

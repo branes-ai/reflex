@@ -66,7 +66,13 @@ first in isolation and then integrated in a closed loop
   minimum precision at which its invariants and tolerances hold. A tolerance
   must scale with the type's precision or the floor must be documented.
 - **BB-S5. Resource contract.** Allocation, exceptions, determinism, and
-  worst-case execution time behaviour, stated and tested.
+  worst-case execution-time behaviour, stated and tested. Behaviour means a
+  fixed or bounded operation count and the operand classes that change it
+  (subnormals, for example), tested on the host. A numeric bound is only
+  valid for a stated processor, compiler, flags, floating-point mode, and
+  interrupt and cache assumptions, and is tested there under BB-I5. Sampled
+  latency statistics from a host benchmark are characterization (BB-C4), not
+  a bound.
 
 ### Testing (T)
 

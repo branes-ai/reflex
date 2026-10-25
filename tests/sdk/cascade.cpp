@@ -452,6 +452,15 @@ TEST_CASE("cascade: attitude mode bypasses the position loop; feedback stores th
 TEST_CASE("cascade: switching from attitude to position mode drops the attitude-mode target at once", "[cascade]") {
     const auto p = rp1<double>();
     Cascade<double> cascade(cascade_config_from(p));
+    // Wind the vertical integrator up in position mode first, so the reset
+    // on the switch back is observable.
+    PositionSetpoint<double> climb;
+    climb.position = vec3(0.0, 0.0, 1.0);
+    for (int i = 0; i < 200; ++i) {
+        (void)cascade.update(VehicleState<double>{}, climb, 1e-3);
+    }
+    REQUIRE(cascade.position().axis(2).integral() > 0.0);
+
     const AttitudeTarget<double> manual{from_rotation_vector(vec3(1.0, 0.0, 0.0)), 0.5 * p.mass * p.gravity};
     for (int i = 0; i < 7; ++i) {  // leave the schedule mid-period
         (void)cascade.update(VehicleState<double>{}, manual, 1e-3);
@@ -461,7 +470,7 @@ TEST_CASE("cascade: switching from attitude to position mode drops the attitude-
     REQUIRE_THAT(w.thrust, WithinAbs(p.mass * p.gravity, 1e-12));  // the position loop ran on this tick
     REQUIRE_THAT(tilt_between(cascade.target().attitude, Quat<double>{}), WithinAbs(0.0, 1e-7));
     REQUIRE_THAT(cascade.rate_setpoint()(0), WithinAbs(0.0, 1e-12));  // and the attitude loop with it
-    REQUIRE(cascade.position().axis(2).integral() == 0.0);
+    REQUIRE(cascade.position().axis(2).integral() == 0.0);            // reset on the switch, zero error since
 }
 
 TEST_CASE("cascade: derived gains are valid iff thrust-to-weight exceeds 1.25", "[cascade]") {

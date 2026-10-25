@@ -142,9 +142,18 @@ roundoff. Both are covered in [WS2](#ws2-verification).
     interrupts and cache effects are included. Within that scope, measure
     cycles per `step()` with the core's cycle counter over generated valid
     states, including subnormal-adjacent operands. Report the maximum with a
-    stated margin as the bound. On an in-order core with fixed-latency FPU
-    instructions and the operation count fixed, that measurement is a
-    defensible bound. Static WCET analysis is optional on top of it.
+    stated margin as an **empirical timing estimate**, not a bound.
+    Promoting it to a bound needs an argument that covers every permitted
+    path and hardware state under the stated assumptions:
+    - Both contact branches are measured.
+    - Cache and flash wait-state behaviour is either eliminated (code and
+      data in tightly coupled memory, or caches disabled) or measured cold.
+    - Interrupts are masked or their preemption is accounted for outside
+      the bound.
+    - The FPU has no operand-dependent latency once flush-to-zero is on,
+      shown from the core's documentation.
+    Static WCET analysis is another way to establish the bound. Until one of
+    these is done, S5 claims the estimate only.
   - Host-side `quadrotor_bench` results (mean, p99.9, sampled maximum) are
     latency characterization (C4), not S5 evidence.
 

@@ -83,6 +83,7 @@ export default defineConfig({
           label: 'Control',
           items: [
             { label: 'PID Controller', slug: 'control/pid' },
+            { label: 'Mixer', slug: 'control/mixer' },
           ],
         },
         {

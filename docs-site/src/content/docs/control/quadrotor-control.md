@@ -252,7 +252,9 @@ straight line:
     speed near 235 m/s. Reaching 240 m/s of pitch speed then needs a
     pitch-to-diameter ratio above 3 (≈).
   - This is the physical wall that makes 720 km/h harder than the current
-    record.
+    record. The Peregreen 3 builders cite the same constraint: they chose
+    custom extreme-pitch APC props to keep the blade tips from going
+    supersonic [16].
 - **The thrust map is a function of airspeed.** A
   [$C_T(J)$](#e-aerodynamic-model-terms) thrust model is mandatory in both
   the controller and the simulator.
@@ -310,15 +312,20 @@ $P_{el} = \tfrac12 \rho\, C_D A\, v^3 / \eta$, where
 $\eta = \eta_{ESC}\,\eta_{motor}\,\eta_{prop}$ is the overall
 electrical-to-thrust-power efficiency.
 
-- **Anchoring the drag area.** The 16.2 kW reported for Peregreen 3 [9] is
-  taken as electrical draw at 162.5 m/s. With $\eta \approx 0.5$ (about
-  0.85 for ESC and motor times 0.6 for the propeller) it implies
-  $C_D A \approx 0.0031\ \mathrm{m^2}$, about a 9 × 9 cm frontal area at
-  $C_D \approx 0.37$ (≈).
-- **At 200 m/s** the same body and efficiency need about 30 kW of electrical
-  power: 1.86 times the power for 1.23 times the speed (≈). The ratio holds
-  for any $\eta$ that stays constant; the drag area itself scales with the
-  assumed $\eta$.
+- **A rough drag-equivalent area.** Peregreen 3's reported figures are a
+  16.2 kW *peak* drive-system draw and a 585 km/h record speed [9, 16]. They
+  are not stated to come from the same steady, level-flight condition, and
+  total electrical power also pays for lift and induced losses, not body drag
+  alone. Treating the peak draw as the power at 162.5 m/s, with
+  $\eta \approx 0.5$ (about 0.85 for ESC and motor times 0.6 for the
+  propeller), gives a drag-*equivalent* area
+  $C_D A \approx 0.0031\ \mathrm{m^2}$: an upper-bound-style lumped figure,
+  about a 9 × 9 cm frontal area at $C_D \approx 0.37$ (≈). For comparison,
+  Peregreen 2 drew 8.9 kW at 1.85 kg for 480 km/h [16].
+- **At 200 m/s**, extrapolating with that lumped area and the same
+  efficiency gives about 30 kW of electrical power: 1.86 times the power for
+  1.23 times the speed (≈). The $v^3$ ratio holds for any constant $\eta$;
+  the absolute figures inherit every assumption above.
 - **Consequences.** The battery and ESCs are sized for peak power, the
   vehicle is heavier, and flight time is minutes.
 
@@ -482,7 +489,10 @@ loop.
 - **Implement:** `control/attitude_controller.hpp`.
 - **Test:**
   - Large-angle steps of 180° in roll and pitch.
-  - Hold at 85° tilt, as an envelope stress case beyond the S5 cruise tilt.
+  - Hold at 85° body tilt (the body z axis 85° from world vertical), as an
+    envelope stress case. On an uncanted airframe body tilt and rotor-thrust
+    tilt coincide; on a canted S5 airframe the test applies to the body
+    attitude envelope, set per vehicle under H3.
   - Continuity of the error through the antipodal quaternion.
 - **Strata:** S0 ○ · S1 ● · S2 ○ · S3 ● · S4 ● · S5 ●
 
@@ -707,3 +717,4 @@ Strata make a natural **test matrix**. The proposal:
 13. *Data-Driven System Identification of Quadrotors Subject to Motor Delays* (Crazyflie τ ≈ 0.072 s; earlier estimate 0.065 s) — <https://arxiv.org/abs/2404.07837>
 14. Bitcraze, *PWM to thrust* and *Keeping thrust consistent as the battery drains* — <https://www.bitcraze.io/documentation/repository/crazyflie-firmware/master/functional-areas/pwm-to-thrust/>
 15. *Abu Dhabi Autonomous Racing League* (A2RL drones > 140 km/h) — <https://en.wikipedia.org/wiki/Abu_Dhabi_Autonomous_Racing_League>
+16. Notebookcheck, *DIY engineers 3D-print world's fastest drone* (Peregreen 3: 16.2 kW peak draw, 2.77 kg, extreme-pitch APC props against supersonic tips; Peregreen 2: 8.9 kW, 1.85 kg) — <https://www.notebookcheck.net/DIY-engineers-3D-print-world-s-fastest-drone-with-363-5-mph-top-speed.1146428.0.html>

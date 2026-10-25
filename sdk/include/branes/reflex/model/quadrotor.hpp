@@ -75,15 +75,21 @@ struct QuadrotorParams {
     T power_coefficient{0};                                  ///< k_p: rotor power = k_p·ω³ [W / (rad/s)³]
 };
 
-/// True if `p` satisfies I1.
+/// True if `p` satisfies I1: every parameter finite, and the bounds above.
 template <typename T>
-[[nodiscard]] constexpr bool quadrotor_params_valid(const QuadrotorParams<T>& p) noexcept {
+[[nodiscard]] bool quadrotor_params_valid(const QuadrotorParams<T>& p) noexcept {
+    using std::isfinite;
     const T zero{0};
-    bool ok = p.mass > zero && p.arm_length > zero && p.thrust_coefficient > zero && p.torque_coefficient > zero &&
-              p.max_thrust > zero && p.motor_time_constant > zero && p.gravity > zero && p.battery_capacity > zero &&
-              p.battery_sag >= zero && p.battery_sag < T(1) && p.power_coefficient >= zero;
+    bool ok = isfinite(p.mass) && isfinite(p.arm_length) && isfinite(p.thrust_coefficient) &&
+              isfinite(p.torque_coefficient) && isfinite(p.max_thrust) && isfinite(p.motor_time_constant) &&
+              isfinite(p.gravity) && isfinite(p.ground_z) && isfinite(p.battery_capacity) && isfinite(p.battery_sag) &&
+              isfinite(p.power_coefficient);
+    ok = ok && p.mass > zero && p.arm_length > zero && p.thrust_coefficient > zero && p.torque_coefficient > zero &&
+         p.max_thrust > zero && p.motor_time_constant > zero && p.gravity > zero && p.battery_capacity > zero &&
+         p.battery_sag >= zero && p.battery_sag < T(1) && p.power_coefficient >= zero;
     for (std::size_t i = 0; i < 3; ++i) {
-        ok = ok && p.inertia[i] > zero && p.drag_linear[i] >= zero && p.drag_quadratic[i] >= zero;
+        ok = ok && isfinite(p.inertia[i]) && isfinite(p.drag_linear[i]) && isfinite(p.drag_quadratic[i]) &&
+             p.inertia[i] > zero && p.drag_linear[i] >= zero && p.drag_quadratic[i] >= zero;
     }
     return ok;
 }
@@ -217,11 +223,18 @@ public:
 
     /// Advance the state by dt with RK4, renormalize the attitude, and apply the
     /// ground contact.
-    /// Pre: quadrotor_state_valid(x) (I2–I5); every command is finite; 0 < dt ≤ 0.01 s.
+    /// Pre: quadrotor_state_valid(x) (I2–I5); every command is finite;
+    ///      0 < dt ≤ min(0.01 s, motor_time_constant). RK4 is unstable on the
+    ///      first-order motor lag once dt exceeds about 2.78·τ; dt ≤ τ keeps a margin.
     /// Post: quadrotor_state_valid(result).
     [[nodiscard]] QuadrotorState<T> step(const QuadrotorState<T>& x, const RotorCommand<T>& u, T dt) const {
-        assert(quadrotor_state_valid(x));    // Pre / I2–I5
-        assert(dt > T(0) && dt <= T(0.01));  // Pre
+        assert(quadrotor_state_valid(x));                                    // Pre / I2–I5
+        assert(dt > T(0) && dt <= T(0.01) && dt <= p_.motor_time_constant);  // Pre
+        for (const T c : u.speeds) {
+            using std::isfinite;
+            assert(isfinite(c));  // Pre: finite commands (clamp_speed passes NaN through)
+            (void)c;
+        }
 
         const QuadrotorDerivative<T> k1 = derivative(x, u);
         const QuadrotorDerivative<T> k2 = derivative(advance(x, k1, dt / T(2)), u);
@@ -303,16 +316,18 @@ private:
         return (T(1) - T(2) * (q.x * q.x + q.y * q.y)) * total;  // R(2, 2) · ΣT
     }
 
-    /// x + h·d, for the RK4 stages (no renormalization, clamping, or contact).
+    /// x + h·d, for the RK4 stages: attitude renormalized; no clamping or contact.
     [[nodiscard]] static QuadrotorState<T> advance(const QuadrotorState<T>& x, const QuadrotorDerivative<T>& d, T h) {
         QuadrotorState<T> y = x;
         y.position = axpy(x.position, h, d.position);
         y.velocity = axpy(x.velocity, h, d.velocity);
         y.body_rates = axpy(x.body_rates, h, d.body_rates);
-        y.attitude = Quat<T>{x.attitude.w + h * d.attitude.w,
-                             x.attitude.x + h * d.attitude.x,
-                             x.attitude.y + h * d.attitude.y,
-                             x.attitude.z + h * d.attitude.z};
+        // Normalized, so each stage's derivative sees a unit quaternion (to_matrix's
+        // precondition); an unnormalized stage scales R by |q|².
+        y.attitude = normalized(Quat<T>{x.attitude.w + h * d.attitude.w,
+                                        x.attitude.x + h * d.attitude.x,
+                                        x.attitude.y + h * d.attitude.y,
+                                        x.attitude.z + h * d.attitude.z});
         for (std::size_t i = 0; i < kRotors; ++i) {
             y.rotor_speeds[i] = x.rotor_speeds[i] + h * d.rotor_speeds[i];
         }

@@ -13,6 +13,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <limits>
 #include <type_traits>
 
 using namespace branes::reflex;
@@ -88,6 +89,19 @@ TEST_CASE("params: I1 accepts RP-1 and rejects each violation", "[model]") {
     REQUIRE_FALSE(quadrotor_params_valid(p));
     p = rp1<double>();
     p.drag_quadratic[2] = -0.1;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+
+    // Every parameter must be finite: +inf passes "> 0" and NaN fails every bound silently.
+    const double inf = std::numeric_limits<double>::infinity();
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    p = rp1<double>();
+    p.torque_coefficient = inf;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.ground_z = nan;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.inertia[0] = inf;
     REQUIRE_FALSE(quadrotor_params_valid(p));
 }
 
@@ -220,15 +234,23 @@ TEST_CASE("drag opposes motion in the body frame", "[model]") {
 
 TEST_CASE("determinism: identical inputs give bit-identical trajectories", "[model]") {
     const QuadrotorModel<double> m(rp1<double>());
-    auto a = airborne(2.0, m.hover_rotor_speed());
+    // High enough to stay airborne for the whole run: every step exercises free flight.
+    auto a = airborne(1000.0, m.hover_rotor_speed());
+    a.body_rates = vec3(0.1, -0.2, 0.3);
     auto b = a;
-    a.body_rates = b.body_rates = vec3(0.1, -0.2, 0.3);
     const RotorCommand<double> u{{900.0, 1100.0, 1000.0, 950.0}};
     for (int i = 0; i < 2000; ++i) {
         a = m.step(a, u, 1e-3);
         b = m.step(b, u, 1e-3);
     }
-    REQUIRE(a.position(0) == b.position(0));
+    REQUIRE_FALSE(a.on_ground);
+    for (std::size_t k = 0; k < 3; ++k) {
+        REQUIRE(a.position(k) == b.position(k));
+        REQUIRE(a.velocity(k) == b.velocity(k));
+        REQUIRE(a.body_rates(k) == b.body_rates(k));
+    }
     REQUIRE(a.attitude == b.attitude);
     REQUIRE(a.rotor_speeds == b.rotor_speeds);
+    REQUIRE(a.energy == b.energy);
+    REQUIRE(a.on_ground == b.on_ground);
 }

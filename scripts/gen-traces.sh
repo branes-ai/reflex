@@ -12,12 +12,13 @@ set -euo pipefail
 
 preset=${1:?usage: gen-traces.sh <preset> <out-dir>}
 out=${2:?usage: gen-traces.sh <preset> <out-dir>}
-root=$(cd "$(dirname "$0")/.." && pwd)
+mkdir -p "$out"
+out=$(cd "$out" && pwd)  # relative to the caller's directory
+root=$(git -C "$(dirname "$0")" rev-parse --show-toplevel)
 cd "$root"
 
 cmake --build --preset "$preset" --target reflex_traces
 bin="build/$preset/tools/trace"
-mkdir -p "$out"
 
 # The commit the traces were generated at; "-dirty" marks uncommitted changes.
 commit=$(git describe --always --dirty --abbrev=7 --exclude '*' 2>/dev/null || echo unknown)

@@ -85,7 +85,8 @@ Model
   compares it with the committed copy under the `regen`
   [equivalence profile](#equivalence-profiles). The profile defines how
   `t`, `channels`, `events`, and `checks` are compared. The fields that say
-  what the trace *is* must match exactly: `schema`, `frames`, `units`, and,
+  what the trace *is* must match exactly: `schema`, `frames`, `units`,
+  `vehicle`, and,
   in `provenance`, `block`, `scenario`, `seed`, `dt_sim`, and `dt_trace`.
   `provenance.commit` and `provenance.compiler` are excluded, because they
   change with every rebuild. A model

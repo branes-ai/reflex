@@ -171,6 +171,8 @@ function attach(root: HTMLElement) {
   // Keyboard, while focus is anywhere in the player. Native controls keep
   // their own keys (Space on a button, arrows on the slider).
   root.addEventListener('keydown', (ev) => {
+    // Leave browser and OS shortcuts alone (Alt+← is back, Ctrl+Home, …).
+    if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
     const target = ev.target as HTMLElement;
     const native = target.matches('button, select, input');
     if (ev.key === ' ' || ev.key === 'k') {
@@ -199,8 +201,14 @@ function attach(root: HTMLElement) {
       async (entries) => {
         if (!entries.some((e) => e.isIntersecting)) return;
         io.disconnect();
-        const { createVehicleView } = await import('./vehicle-view');
-        view = createVehicleView(host, trace, { thrustScale: config.thrustScale, reducedMotion: reducedMotion() });
+        try {
+          const { createVehicleView } = await import('./vehicle-view');
+          view = createVehicleView(host, trace, { thrustScale: config.thrustScale, reducedMotion: reducedMotion() });
+        } catch (err) {
+          // A failed chunk load or a renderer error leaves the plots working.
+          console.error('TracePlayer: 3-D view unavailable', err);
+          view = null;
+        }
         if (!view) {
           host.querySelector<HTMLElement>('[data-fallback]')!.hidden = false;
           return;

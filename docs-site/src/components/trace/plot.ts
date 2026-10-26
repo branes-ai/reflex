@@ -72,9 +72,18 @@ export function renderPlot(trace: Trace, spec: PlotSpec) {
   if (spec.setpoint && !setpoint) throw new Error(`TracePlayer: no channel "${spec.channel}_setpoint"`);
   const unit = channelUnit(trace, spec.channel) ?? '';
 
-  const values = comps.flatMap((c) => [...data, ...(setpoint ?? [])].map((e) => component(e, c)));
-  let lo = Math.min(...values);
-  let hi = Math.max(...values);
+  // A loop, not Math.min(...values): spreading a long trace overflows the stack.
+  let lo = Infinity;
+  let hi = -Infinity;
+  for (const series of setpoint ? [data, setpoint] : [data]) {
+    for (const entry of series) {
+      for (const c of comps) {
+        const v = component(entry, c);
+        if (v < lo) lo = v;
+        if (v > hi) hi = v;
+      }
+    }
+  }
   const minSpan = Math.max(Math.abs(hi), Math.abs(lo), 1) * 0.1;
   if (hi - lo < minSpan * 1e-6) {
     lo -= minSpan / 2;

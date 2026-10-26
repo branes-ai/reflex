@@ -17,8 +17,13 @@
 ///   W4: a reserved channel has its reserved width; any other channel names a
 ///       unit.
 ///   W5: event times lie within [t.front(), t.back()] at serialization.
-///   W6: a check's comparison is "<=" or ">=", and its value and limit are
-///       finite.
+///   W6: a check's comparison is "<=" or ">=", its value and limit are
+///       finite, its id is a requirement ID (e.g. "BB-V3") unique within the
+///       trace, and its metric and unit are non-empty.
+///   W7: channel names match [a-z][a-z0-9_]*; at least one channel; event
+///       labels are non-empty and event times finite.
+/// Together these are the rules of the JSON Schema and validate.js, so a
+/// trace the writer accepts passes `npm run traces:check`.
 /// Violations throw std::invalid_argument; tools may use exceptions.
 
 #include <array>
@@ -94,6 +99,38 @@ struct Check {
         }
     }
     return 0;
+}
+
+/// True if `name` matches [a-z][a-z0-9_]* (W7).
+[[nodiscard]] inline bool valid_channel_name(std::string_view name) {
+    if (name.empty() || name[0] < 'a' || name[0] > 'z') {
+        return false;
+    }
+    for (const char c : name) {
+        if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_')) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/// True if `id` is a requirement ID, matching [A-Z]+-[A-Z]+[0-9]+ (W6).
+[[nodiscard]] inline bool valid_requirement_id(std::string_view id) {
+    std::size_t i = 0;
+    const auto run = [&](auto pred) {
+        const std::size_t start = i;
+        while (i < id.size() && pred(id[i])) {
+            ++i;
+        }
+        return i > start;
+    };
+    const auto upper = [](char c) { return c >= 'A' && c <= 'Z'; };
+    const auto digit = [](char c) { return c >= '0' && c <= '9'; };
+    if (!run(upper) || i >= id.size() || id[i] != '-') {
+        return false;
+    }
+    ++i;
+    return run(upper) && run(digit) && i == id.size();
 }
 
 /// The value of an environment variable, or "" if unset. MSVC deprecates
@@ -201,7 +238,7 @@ public:
     /// Declares a channel. Reserved channels (W4) take no unit; any other
     /// channel must name one. Pre: no samples taken yet; name not declared.
     void channel(const std::string& name, std::size_t width, std::string unit = {}) {
-        if (!t_.empty() || index_.count(name) != 0 || width == 0) {
+        if (!t_.empty() || index_.count(name) != 0 || width == 0 || !valid_channel_name(name)) {
             throw std::invalid_argument("reflex-trace: cannot declare channel " + name);
         }
         const std::size_t reserved = reserved_width(name);
@@ -256,13 +293,20 @@ public:
     }
 
     void event(double t, std::string label) {
+        if (!std::isfinite(t) || label.empty()) {
+            throw std::invalid_argument("reflex-trace: malformed event");  // W7
+        }
         events_.push_back({t, std::move(label)});
     }
 
     void check(Check c) {
+        bool duplicate = false;
+        for (const Check& other : checks_) {
+            duplicate = duplicate || other.id == c.id;
+        }
         if ((c.comparison != "<=" && c.comparison != ">=") || !std::isfinite(c.value) || !std::isfinite(c.limit) ||
-            c.id.empty() || c.metric.empty() || c.unit.empty()) {
-            throw std::invalid_argument("reflex-trace: malformed check " + c.id);  // W6
+            !valid_requirement_id(c.id) || duplicate || c.metric.empty() || c.unit.empty()) {
+            throw std::invalid_argument("reflex-trace: malformed or duplicate check " + c.id);  // W6
         }
         checks_.push_back(std::move(c));
     }
@@ -281,8 +325,8 @@ public:
 
     [[nodiscard]] std::string to_json() const {
         require_complete();
-        if (t_.empty()) {
-            throw std::invalid_argument("reflex-trace: no samples");
+        if (t_.empty() || channels_.empty()) {
+            throw std::invalid_argument("reflex-trace: no samples or no channels");  // W7
         }
         for (const Event& e : events_) {
             if (!(e.t >= t_.front() && e.t <= t_.back())) {

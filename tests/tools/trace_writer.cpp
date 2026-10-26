@@ -87,8 +87,11 @@ TEST_CASE("trace writer: cardinality and width enforce W2 and W3", "[trace]") {
 
 TEST_CASE("trace writer: events and checks enforce W5 and W6", "[trace]") {
     Trace tr(provenance());
+    tr.channel("position", 3);
     tr.sample(0);
+    tr.set("position", {0, 0, 1});
     tr.sample(0.01);
+    tr.set("position", {0, 0, 1});
     REQUIRE_THROWS_AS(tr.check({.id = "BB-V3", .metric = "m", .unit = "1", .value = 1, .limit = 2, .comparison = "<"}),
                       std::invalid_argument);
     tr.event(0.5, "late");
@@ -117,4 +120,31 @@ TEST_CASE("trace writer: serialized form", "[trace]") {
     REQUIRE(contains(json, "\"units\": { \"roll_integrator\": \"N·m\" }"));
     REQUIRE(contains(json, "\"label\": \"step \\\"20°\\\"\""));
     REQUIRE(contains(json, "\"pass\": true"));
+}
+
+TEST_CASE("trace writer: names, ids, and labels enforce W6 and W7", "[trace]") {
+    using branes::reflex::trace::valid_channel_name;
+    using branes::reflex::trace::valid_requirement_id;
+    REQUIRE(valid_channel_name("roll_integrator"));
+    REQUIRE_FALSE(valid_channel_name("Roll"));
+    REQUIRE_FALSE(valid_channel_name("1st"));
+    REQUIRE_FALSE(valid_channel_name("roll-rate"));
+    REQUIRE(valid_requirement_id("BB-V3"));
+    REQUIRE(valid_requirement_id("BB-I12"));
+    REQUIRE_FALSE(valid_requirement_id("ANI-12"));  // the schema pattern needs letters after the dash
+    REQUIRE_FALSE(valid_requirement_id("BB-3"));
+    REQUIRE_FALSE(valid_requirement_id("bb-V3"));
+    REQUIRE_FALSE(valid_requirement_id("BB-V3a"));
+
+    Trace tr(provenance());
+    REQUIRE_THROWS_AS(tr.channel("Roll", 1, "rad"), std::invalid_argument);
+    tr.sample(0);
+    REQUIRE_THROWS_AS(tr.to_json(), std::invalid_argument);  // no channels
+    REQUIRE_THROWS_AS(tr.event(0, ""), std::invalid_argument);
+    const Check c{.id = "BB-V3", .metric = "m", .unit = "1", .value = 1, .limit = 2, .comparison = "<="};
+    tr.check(c);
+    REQUIRE_THROWS_AS(tr.check(c), std::invalid_argument);  // duplicate id
+    Check bad = c;
+    bad.id = "V3";
+    REQUIRE_THROWS_AS(tr.check(bad), std::invalid_argument);
 }

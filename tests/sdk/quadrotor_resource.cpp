@@ -6,83 +6,14 @@
 
 #include <branes/reflex/model/quadrotor.hpp>
 
+#include "counted.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 
-#include <cmath>
-#include <compare>
 #include <cstdint>
-#include <limits>
 #include <random>
 
-namespace {
-
-/// A double that counts +, −, ×, ÷ (including compound forms) and sqrt.
-/// Negation, comparison, abs, and isfinite are not counted: they are not
-/// arithmetic in the sense of BB-S5.
-struct Counted {
-    static inline std::uint64_t ops = 0;
-    static inline std::uint64_t roots = 0;
-
-    double v{0};
-
-    constexpr Counted() = default;
-    constexpr Counted(double x) : v(x) {}  // NOLINT(google-explicit-constructor): a scalar stand-in
-
-    friend Counted operator+(Counted a, Counted b) {
-        ++ops;
-        return a.v + b.v;
-    }
-    friend Counted operator-(Counted a, Counted b) {
-        ++ops;
-        return a.v - b.v;
-    }
-    friend Counted operator*(Counted a, Counted b) {
-        ++ops;
-        return a.v * b.v;
-    }
-    friend Counted operator/(Counted a, Counted b) {
-        ++ops;
-        return a.v / b.v;
-    }
-    friend Counted operator-(Counted a) {
-        return -a.v;
-    }
-    Counted& operator+=(Counted b) {
-        return *this = *this + b;
-    }
-    Counted& operator-=(Counted b) {
-        return *this = *this - b;
-    }
-    Counted& operator*=(Counted b) {
-        return *this = *this * b;
-    }
-    Counted& operator/=(Counted b) {
-        return *this = *this / b;
-    }
-    friend constexpr std::partial_ordering operator<=>(Counted a, Counted b) {
-        return a.v <=> b.v;
-    }
-    friend Counted sqrt(Counted a) {
-        ++roots;
-        return std::sqrt(a.v);
-    }
-    friend Counted abs(Counted a) {
-        return std::abs(a.v);
-    }
-    friend bool isfinite(Counted a) {
-        return std::isfinite(a.v);
-    }
-};
-
-}  // namespace
-
-template <>
-struct std::numeric_limits<Counted> : std::numeric_limits<double> {
-    static constexpr Counted epsilon() noexcept {
-        return std::numeric_limits<double>::epsilon();
-    }
-};
-
+using counted::Counted;
 using namespace branes::reflex;
 using namespace branes::reflex::model;
 
@@ -98,10 +29,9 @@ Count count_step(const QuadrotorModel<Counted>& m,
                  const RotorCommand<Counted>& u,
                  Counted dt,
                  QuadrotorState<Counted>& y) {
-    Counted::ops = 0;
-    Counted::roots = 0;
+    Counted::reset();
     y = m.step(x, u, dt);
-    return Count{Counted::ops, Counted::roots};
+    return Count{Counted::ops, Counted::calls};
 }
 
 }  // namespace

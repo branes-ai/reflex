@@ -175,9 +175,13 @@ One schema, `reflex-trace/1`, serves reflex pages and mission replays:
 
 The schema is normative. A JSON Schema file,
 `docs-site/schemas/reflex-trace-1.schema.json`, checks structure and types.
-A validator script checks the semantic rules a JSON Schema cannot express:
-lengths, monotonicity, and unit norm. CI validates every committed trace,
-and `TracePlayer` refuses a trace that fails.
+A validator, `docs-site/src/lib/trace/validate.js`, checks the semantic
+rules a JSON Schema cannot express: lengths, monotonicity, and unit norm.
+CI validates every committed trace, and `TracePlayer` refuses a trace that
+fails, which fails the docs build. The C++ writer
+(`tools/trace/include/branes/reflex/trace/writer.hpp`) enforces the same
+rules as a scenario records samples. The [Trace Player](/standards/trace-player/)
+page documents the tooling.
 
 - **Units.** SI throughout, and every angle in radians, including setpoints
   and checks. Degrees appear only in human-readable `label` text.
@@ -205,7 +209,13 @@ and `TracePlayer` refuses a trace that fails.
 - **`events`** have `t` within the range of `t`, and a display `label`.
 - **`checks`** have `id` (a requirement ID), `metric`, `unit`, `value`,
   `limit`, `comparison` (`<=` or `>=`), and `pass`. `pass` is computed by
-  the harness and never by the player.
+  the harness and never by the player. Check `id`s are unique within a
+  trace, because the equivalence profiles match checks by `id`.
+- **`vehicle`** (optional) holds geometry for the 3-D view: `arm_length` in
+  m. Without it, the view draws the RP-1 default airframe.
+- **`provenance.equivalence`** (optional) declares an override for a chaotic
+  scenario: a `justification`, and optionally a comparison `horizon` in s
+  and per-channel `tolerances` (`rtol`, `atol`).
 - **Versioning.** Adding optional fields or reserved channels keeps
   `reflex-trace/1`. Any change to an existing field's meaning, shape, or unit
   makes it `reflex-trace/2`.
@@ -228,13 +238,13 @@ Two traces are equivalent under a profile when all of these hold:
    satisfies the component rule with $r_{\text{tol}}$ = 1e-9 and
    $a_{\text{tol}}$ = 1e-9 in the check's unit. Both traces have the same
    set of check `id`s.
- The `trace_diff` tool (BB-D3)
+The `trace_diff` tool (BB-D3), `npm run trace-diff` in `docs-site/`,
 implements these profiles and reports the first sample and channel that
 fail.
 
 | Profile | Used by | Compared | $r_{\text{tol}}$ | $a_{\text{tol}}$ |
 |---|---|---|---|---|
-| `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events`, and `checks` | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds 1e-6 rad/s; other channels 1e-9 in their unit |
+| `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events`, and `checks` | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds and their setpoints 1e-6 rad/s; other channels 1e-9 in their unit |
 | `wasm` | Tier 2: Wasm against native, reference scenario only | Reserved channels; rules 2–3 apply to them, and rules 4–5 do not | 1e-9 | as `regen` |
 
 - **Attitude** is compared as the rotation angle
@@ -299,6 +309,11 @@ on.
 | **P4. Scenario gallery** | Nightly scenario runs (BB-I2) publish their traces; a gallery page lists every scenario with playback and its checks | Gallery regenerates nightly; a failing scenario shows as failing |
 | **P5. Shared with racing-drone** | `TracePlayer` and the schema published for reuse (an npm package or a versioned asset); racing-drone exports mission replays in `reflex-trace/1` | A racing-drone replay plays in the same player |
 
+**Status.** P0 is done: the [Trace Player](/standards/trace-player/) page plays
+its test trace, and the `Docs traces` CI job runs the staleness and size
+checks. The decisions taken are three.js for the 3-D view, and the current
+sidebar, so the per-block page grouping above waits for P1.
+
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method
 pays for itself. If newcomers and integrators don't find the pages clearer
@@ -306,16 +321,22 @@ than the static ones, stop at P1 and keep the player for V&V pages only.
 P2 goes after P1, because Wasm adds a toolchain to CI and only explainers
 need it.
 
-## Decisions needed
+## Decisions
 
-1. **Three.js on the docs site.** It adds roughly 150 KB gzipped on pages
-   with a 3-D view. The alternative is a 2-D orthographic view drawn in SVG,
-   which is lighter but can't show attitude on SO(3) well.
-2. **Emscripten in CI** for P2: a pinned emsdk on the docs workflow, or a
+Taken for P0:
+
+- **three.js on the docs site.** Taken: the 3-D view uses three.js. It
+  loads as a separate chunk (about 120 KB gzipped, view code included) only
+  on pages with a 3-D view, and only when the player scrolls near the
+  viewport. The size-budget check enforces the placement.
+- **Sidebar.** Taken: keep the current sidebar for now. The per-block
+  grouping, which moves URLs and needs redirects, is revisited with P1.
+
+Still open:
+
+1. **Emscripten in CI** for P2: a pinned emsdk on the docs workflow, or a
    separate job that publishes the Wasm module as a build artifact.
-3. **Sidebar restructure** to one group per block with four pages. This
-   moves existing URLs, so it needs redirects.
-4. **BB-R5** (deployment guide) added to the building block standard for
+2. **BB-R5** (deployment guide) added to the building block standard for
    grade A.
-5. **Where the shared player lives** for P5: in reflex's docs-site, or a
+3. **Where the shared player lives** for P5: in reflex's docs-site, or a
    small separate package that reflex and racing-drone both depend on.

@@ -1,0 +1,110 @@
+---
+title: Trace Player
+description: The reflex-trace/1 tooling and the TracePlayer component that plays block traces on docs pages, with the P0 test trace.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import rollPulse from '../../../traces/quadrotor/roll_pulse.json';
+
+This page documents the trace playback tier of the
+[block pages and animation standard](/standards/animation/). It covers the
+infrastructure built in phase P0 and plays its test trace. Block pages use the
+same player for their own animations.
+
+## Test trace: an open-loop roll pulse
+
+<TracePlayer
+  trace={rollPulse}
+  title="What does a roll torque pulse do to an uncontrolled quadrotor?"
+  description="The vehicle hovers at 1 m with every rotor at the hover speed of about 1660 rad/s. At 0.1 s the left rotors (1 and 2) are commanded 40 rad/s faster and the right rotors (0 and 3) 40 rad/s slower. The rotors follow with a 20 ms lag, and the vehicle starts to roll right side down. At 0.22 s the commands reverse, which brakes the roll. At 0.34 s every rotor is commanded back to hover speed. The vehicle is left rolled by about 0.18 rad (10°). Nothing levels it, because there is no controller. The tilted thrust pushes the vehicle to the right (−y) and it slowly sinks, about 1.4 m sideways and 0.11 m down by 1.5 s."
+  plots={[
+    { channel: 'rotor_speeds', title: 'Rotor speeds', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR (= 3 RR)', '1 RL (= 2 FL)'], setpoint: true },
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'] },
+    { channel: 'body_rates', title: 'Roll rate', components: [0], labels: ['p (body x)'] },
+    { channel: 'position', title: 'Position', components: [1, 2], labels: ['y', 'z'] },
+  ]}
+/>
+
+Look for three things:
+
+- **Motor lag.** The rotor speeds follow the dashed commands with a delay of
+  about τ = 20 ms, so the torque arrives late.
+- **Coupling.** Roll does not move the vehicle by itself. Translation begins
+  only once the thrust vector tilts.
+- **Conventions.** Positive roll lowers the right side (rotation about body x,
+  with z up). The vehicle then slides toward −y, to its right.
+
+The check below the player is computed by the scenario harness, in C++. The
+player only displays it (ANI-4).
+
+## How a trace gets onto a page
+
+1. **Scenario.** Add a source file under `tools/trace/scenarios/<block>/`.
+   It drives the block's own C++ and records samples with
+   `branes::reflex::trace::Trace`, the writer in
+   `tools/trace/include/branes/reflex/trace/writer.hpp`. The writer enforces
+   the schema's invariants as the scenario runs: monotone uniform time, one
+   entry per sample, fixed widths, finite values, and units on non-reserved
+   channels. It writes `$REFLEX_TRACE_DIR/<block>/<scenario>.json`. CMake
+   builds each scenario as `trace_<block>_<scenario>`.
+2. **Generate.** `scripts/gen-traces.sh gcc-release docs-site/src/traces` builds
+   and runs every scenario. It stamps the commit as `git describe --dirty`, so
+   a trace generated from uncommitted changes says so.
+3. **Commit** the trace with the change that produced it.
+4. **Play.** Import the JSON file in an `.mdx` page and pass it to
+   `<TracePlayer>`, together with a title that asks one question, a text
+   description, and the plots to show. The component validates the trace at
+   build time, so an invalid trace fails the docs build.
+
+```mdx
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import rollPulse from '../../../traces/quadrotor/roll_pulse.json';
+
+<TracePlayer trace={rollPulse} title="…?" description="…"
+  plots={[{ channel: 'rotor_speeds', title: 'Rotor speeds', setpoint: true }]} />
+```
+
+## What CI checks
+
+The `Docs traces` job in `ci.yml` runs on every pull request:
+
+| Check | Tool | Fails when |
+|---|---|---|
+| Schema and semantics | `npm run traces:check` (JSON Schema `docs-site/schemas/reflex-trace-1.schema.json`, plus `src/lib/trace/validate.js`) | A committed trace is malformed |
+| Staleness (ANI-3) | `scripts/gen-traces.sh` into `build/traces`, then `check.mjs --regen` | A regenerated trace is not equivalent to the committed one under the `regen` profile, or a scenario's trace is missing from either side |
+| Trace diff (BB-D3) | `npm run trace-diff -- <candidate> <reference> [--profile regen\|wasm]` | (used by the staleness check; also a local tool) It reports the first channel and sample that differ |
+| Docs build | `npm run build` | A page passes an invalid trace to `TracePlayer` |
+| Size budget (ANI-12) | `npm run size-budget` | A trace is over 250 KB gzipped, a Wasm module with its loader is over 400 KB, or a page without a 3-D view loads three.js |
+
+A model change that alters a trace therefore fails CI until the trace is
+regenerated and committed in the same pull request.
+
+## Player behaviour
+
+- **Playback.** The player starts paused. It has play and pause, a scrubber,
+  speeds of 0.1× to 1×, and seek buttons for each event. Dragging on any plot
+  also scrubs. The current rate is always shown in the header.
+- **Keyboard.** With focus anywhere in the player: Space or K plays and
+  pauses, ← and → step one sample (ten with Shift), Home and End jump to the
+  ends, and `[` and `]` change the speed.
+- **Reduced motion.** With `prefers-reduced-motion`, the camera starts in the
+  fixed overview instead of the chase view, and still only plays on request.
+- **Sample and hold.** The cursor always sits on a recorded sample. The player
+  neither interpolates nor computes dynamics, so everything on screen comes
+  from the trace.
+- **3-D view.** The view shows world axes and a ground grid at z = 0 with
+  0.5 m squares, and the PX4 Quad X glyph. Rotors carry their model indices,
+  spin arrows, and colours that match the plots. Each rotor has a thrust
+  arrow, drawn to the scale stated on screen, and the view also shows body
+  axes, a nose cone on +x, and the trail so far. three.js loads only when a
+  player scrolls near the viewport, and only on pages that have one. Without
+  WebGL, the plots and the description still carry the trace.
+- **Theme.** Colours come from the same tokens as the SVG figures, for light
+  and dark. The layout stacks to one column at phone width.
+
+## Trace format additions
+
+`reflex-trace/1` gained one optional field in P0, as the versioning rule
+allows. `vehicle.arm_length` (in m) lets the 3-D view draw the airframe to
+scale. Traces without it are drawn with the RP-1 default of 0.11 m.

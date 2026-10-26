@@ -113,6 +113,36 @@ struct MixerOutput {
     bool thrust_shifted{false};             ///< the collective moved off F/4 to keep roll/pitch
 };
 
+/// Which way mix() cut each channel of a demand: +1 it delivered less than
+/// the demand (cut high), −1 more (cut low), 0 the channel was met. The
+/// control loops pass it to their integrators (Pid's external_saturation) on
+/// the next tick, so they do not wind up against the mixer.
+struct Saturation {
+    std::array<int, 3> torque{};  ///< roll, pitch, yaw
+    int thrust{0};                ///< collective
+};
+
+/// The saturation report for demand `w` and its mix() result `out`.
+/// σ < 1 shrinks roll and pitch toward zero, and s < 1 shrinks yaw, so each
+/// cut is in the direction of the demand's sign; a shifted collective is cut
+/// in the direction of demand − achieved.
+template <typename T>
+[[nodiscard]] Saturation saturation_from(const Wrench<T>& w, const MixerOutput<T>& out) noexcept {
+    const auto sign = [](T v) { return v > T(0) ? 1 : (v < T(0) ? -1 : 0); };
+    Saturation s;
+    if (out.rp_scale < T(1)) {
+        s.torque[0] = sign(w.torque(0));
+        s.torque[1] = sign(w.torque(1));
+    }
+    if (out.yaw_scale < T(1)) {
+        s.torque[2] = sign(w.torque(2));
+    }
+    if (out.thrust_shifted) {
+        s.thrust = sign(w.thrust - out.achieved.thrust);
+    }
+    return s;
+}
+
 template <typename T>
 class Mixer {
 public:

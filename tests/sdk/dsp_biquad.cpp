@@ -166,7 +166,7 @@ TEMPLATE_TEST_CASE("reset restarts at a new steady state", "[dsp][biquad]", doub
 
 // ── Designs against their analytic properties ─────────────────────────────
 
-TEST_CASE("butterworth_lowpass: unity DC, −3 dB at fc, monotone magnitude", "[dsp][biquad][design]") {
+TEST_CASE("butterworth_lowpass: unity DC, -3 dB at fc, monotone magnitude", "[dsp][biquad][design]") {
     for (const double fc : {30.0, 150.0, 400.0, 1500.0, 3500.0}) {
         INFO("fc " << fc << " Hz");
         const BiquadCoefficients<double> c = butterworth_lowpass(fc, kFs);
@@ -183,7 +183,7 @@ TEST_CASE("butterworth_lowpass: unity DC, −3 dB at fc, monotone magnitude", "[
     }
 }
 
-TEST_CASE("first_order_lowpass: unity DC, −3 dB at fc", "[dsp][biquad][design]") {
+TEST_CASE("first_order_lowpass: unity DC, -3 dB at fc", "[dsp][biquad][design]") {
     for (const double fc : {10.0, 80.0, 600.0}) {
         INFO("fc " << fc << " Hz");
         const BiquadCoefficients<double> c = first_order_lowpass(fc, kFs);
@@ -195,7 +195,7 @@ TEST_CASE("first_order_lowpass: unity DC, −3 dB at fc", "[dsp][biquad][design]
     }
 }
 
-TEST_CASE("notch: zero at f0, unity at DC and Nyquist, closed-form −3 dB width", "[dsp][biquad][design]") {
+TEST_CASE("notch: zero at f0, unity at DC and Nyquist, closed-form -3 dB width", "[dsp][biquad][design]") {
     for (const double f0 : {100.0, 264.0, 800.0, 3000.0}) {
         for (const double q : {2.0, 5.0, 20.0}) {
             INFO("f0 " << f0 << " Hz, q " << q);

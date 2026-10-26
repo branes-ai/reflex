@@ -19,17 +19,19 @@
 /// Model
 /// -----
 ///   RpmNotch<T, Rotors, MaxHarmonics>
-///     cfg_    : RpmNotchConfig<T> [owned, immutable]
+///     cfg_    : RpmNotchConfig<T> [owned, immutable after construction]
 ///     notch_  : Biquad<T> [Rotors][MaxHarmonics][3] — one per rotor, harmonic, axis;
 ///               the three axes of a notch share coefficients
 ///     center_ : T [Rotors][MaxHarmonics] — centre frequency [Hz]
 ///     weight_ : T [Rotors][MaxHarmonics] — blend weight
+///     last_   : T [3] — the last output, per axis
 ///
 /// Invariants
 /// ----------
 ///   I1: rpm_notch_config_valid(cfg_)                      — constrains cfg_
 ///   I2: every centre in [min_hz, f_max]                   — constrains center_
 ///   I3: every weight in [0, 1]                            — constrains weight_
+///   I4: the last output is finite                         — constrains last_
 ///   (each Biquad keeps its own I1–I2)
 ///
 /// Only the first cfg_.harmonics harmonics are used; the rest stay at the
@@ -94,9 +96,12 @@ public:
 
     /// Pre:  rpm_notch_config_valid<T, MaxHarmonics>(cfg).
     /// Post: every notch at min_hz with weight 0 (pass-through until the
-    ///       first rotor speeds arrive), zero history. Establishes I1–I3.
+    ///       first rotor speeds arrive), zero history. Establishes I1–I4.
     explicit RpmNotch(const RpmNotchConfig<T>& cfg) noexcept : cfg_{cfg} {
         assert((rpm_notch_config_valid<T, MaxHarmonics>(cfg_)));  // Pre / I1
+        if (cfg_.harmonics > MaxHarmonics) {
+            cfg_.harmonics = MaxHarmonics;  // release: keep the loops within the arrays
+        }
         const BiquadCoefficients<T> c = notch(cfg_.min_hz, cfg_.q, cfg_.sample_rate);
         for (std::size_t r = 0; r < Rotors; ++r) {
             for (std::size_t h = 0; h < MaxHarmonics; ++h) {
@@ -117,7 +122,7 @@ public:
     /// Post: for each rotor with a valid speed and each harmonic h = 1…H, with
     ///       f = h·ω/2π: if f ≤ f_max, centre = max(f, min_hz) and weight =
     ///       clamp((f − min_hz)/fade_hz, 0, 1) (a step at min_hz if fade_hz = 0);
-    ///       otherwise centre = f_max and weight = 0. I1–I3 hold.
+    ///       otherwise centre = f_max and weight = 0. I1–I4 hold.
     void update_rotor_speeds(const std::array<T, Rotors>& omega) noexcept {
         using std::isfinite;
         const T f_max = rpm_notch_max_hz(cfg_.sample_rate);
@@ -156,23 +161,39 @@ public:
 
     /// Filter one 3-axis sample through every active notch in series.
     ///
-    /// Pre: none (a non-finite component is held by each section, see Biquad).
-    /// Post: returns the filtered sample. I1–I3 hold.
+    /// Pre: none. A non-finite input component, or a blend that overflows the
+    ///      scalar type, is a fault on that axis: the axis returns its last
+    ///      output, and the sections after the fault keep their state.
+    /// Post: returns the filtered sample; every component is finite (I4).
+    ///       I1–I4 hold.
     [[nodiscard]] Vec3<T> apply(const Vec3<T>& x) noexcept {
+        using std::isfinite;
         std::array<T, 3> y{x(0), x(1), x(2)};
         for (std::size_t r = 0; r < Rotors; ++r) {
             for (std::size_t h = 0; h < cfg_.harmonics; ++h) {
                 const T w = weight_[r][h];
                 for (std::size_t i = 0; i < 3; ++i) {
-                    y[i] = y[i] + w * (notch_[r][h][i].update(y[i]) - y[i]);
+                    if (isfinite(y[i])) {
+                        y[i] = y[i] + w * (notch_[r][h][i].update(y[i]) - y[i]);
+                    }
                 }
             }
         }
+        for (std::size_t i = 0; i < 3; ++i) {
+            if (isfinite(y[i])) {
+                last_[i] = y[i];
+            } else {
+                y[i] = last_[i];  // fault: hold this axis (I4)
+            }
+        }
+        assert(check_invariant());
         return vec3(y[0], y[1], y[2]);
     }
 
-    /// Restart every section's history at zero; keeps centres and weights.
+    /// Restart every section's history and the held output at zero; keeps
+    /// centres and weights.
     void reset() noexcept {
+        last_ = {};
         for (auto& rotor : notch_) {
             for (auto& harmonic : rotor) {
                 for (Biquad<T>& b : harmonic) {
@@ -215,6 +236,10 @@ private:
                 ok = ok && !(weight_[r][h] < T(0)) && !(T(1) < weight_[r][h]);          // I3
             }
         }
+        using std::isfinite;
+        for (const T& v : last_) {
+            ok = ok && isfinite(v);  // I4
+        }
         return ok;
     }
 
@@ -222,6 +247,7 @@ private:
     std::array<std::array<std::array<Biquad<T>, 3>, MaxHarmonics>, Rotors> notch_{};
     std::array<std::array<T, MaxHarmonics>, Rotors> center_{};
     std::array<std::array<T, MaxHarmonics>, Rotors> weight_{};
+    std::array<T, 3> last_{};
 };
 
 }  // namespace branes::reflex::dsp

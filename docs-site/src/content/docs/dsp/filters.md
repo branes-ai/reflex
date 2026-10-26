@@ -80,6 +80,8 @@ for (std::size_t i = 0; i < 3; ++i) {
 - **A non-finite sample** (or an output that overflows the scalar type)
   makes a section return its last output and keep its state. A single bad
   gyro sample does not corrupt the filter.
+- **A non-finite input component, or a notch blend that overflows,** makes
+  `RpmNotch::apply` return that axis's last output; the other axes carry on.
 - **A non-finite or negative rotor speed** makes `RpmNotch` keep that rotor's
   previous notches.
 - **A section starts at a steady state**: `Biquad(c, x0)` and `reset(x0)` set
@@ -109,7 +111,7 @@ in. `rpm_notch_config_valid` checks a configuration.
 
 | | |
 |---|---|
-| **Invariants** | `Biquad`: valid (finite, stable) coefficients and a finite history. `RpmNotch`: a valid configuration, every centre in [min_hz, 0.45·fs], every weight in [0, 1]. Checked by `assert` after each operation. |
+| **Invariants** | `Biquad`: valid (finite, stable) coefficients and a finite history. `RpmNotch`: a valid configuration, every centre in [min_hz, 0.45·fs], every weight in [0, 1], a finite last output. Checked by `assert` after each operation. |
 | **Real-time** | `noexcept`, no allocation. `Biquad::update` runs 9 operations; `RpmNotch::apply` runs a count that depends only on the configuration; `update_rotor_speeds` is bounded by its all-in-range call. `tests/sdk/dsp_resource.cpp` checks all three. |
 | **Scalar types** | Any type with `+ − × ÷ <`, `sin`, `cos`, `abs`, `isfinite`, and construction from `double`. Tested in `double` and `float`. |
 

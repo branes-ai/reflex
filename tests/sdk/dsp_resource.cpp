@@ -40,12 +40,16 @@ Cost cost(F&& f) {
 
 constexpr double kTwoPi = 6.283185307179586;
 
-// Debug builds also run Biquad's invariant check after each update, whose
-// stability test adds one operation (1 + a2). Release builds run none.
+// Debug builds also run the invariant checks: Biquad's stability test adds one
+// operation per update (1 + a2), and RpmNotch's three per apply (the
+// configuration's min_hz + fade_hz and two 0.45·fs limits). Release builds
+// run none.
 #ifdef NDEBUG
 constexpr std::uint64_t kCheckOps = 0;
+constexpr std::uint64_t kApplyCheckOps = 0;
 #else
 constexpr std::uint64_t kCheckOps = 1;
+constexpr std::uint64_t kApplyCheckOps = 3;
 #endif
 
 }  // namespace
@@ -76,7 +80,7 @@ TEST_CASE("S5: RpmNotch::apply's operation count depends only on the configurati
         cfg.sample_rate = Counted(8000);
         cfg.harmonics = harmonics;
         RpmNotch<Counted> n(cfg);
-        const std::uint64_t expected = 4 * harmonics * 3 * (9 + kCheckOps + 3);
+        const std::uint64_t expected = 4 * harmonics * 3 * (9 + kCheckOps + 3) + kApplyCheckOps;
         for (int k = 0; k < 500; ++k) {
             if (k % 10 == 0) {
                 n.update_rotor_speeds({Counted(w(rng)), Counted(w(rng)), Counted(w(rng)), Counted(w(rng))});

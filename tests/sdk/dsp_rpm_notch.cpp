@@ -159,6 +159,59 @@ TEMPLATE_TEST_CASE("a non-finite or negative rotor speed holds that rotor's notc
     REQUIRE(std::abs(static_cast<double>(n.center_hz(3, 0)) - 300.0) < 1e-3);
 }
 
+TEMPLATE_TEST_CASE("apply holds an axis's last output on a non-finite input", "[dsp][rpm-notch]", double, float) {
+    using T = TestType;
+    // The axes are independent filters. Axis 1 faults now and then: it must
+    // return its last output and continue as if the fault never came (as
+    // `axis1`, which never sees it). Axes 0 and 2 run on (as `others`).
+    RpmNotch<T> n(gyro_config<T>());
+    RpmNotch<T> axis1(gyro_config<T>());
+    RpmNotch<T> others(gyro_config<T>());
+    const auto omega = speeds<T>(hz_to_rad(250), hz_to_rad(260), hz_to_rad(270), hz_to_rad(280));
+    n.update_rotor_speeds(omega);
+    axis1.update_rotor_speeds(omega);
+    others.update_rotor_speeds(omega);
+    std::mt19937 rng(20261026);
+    std::uniform_real_distribution<double> u(-1, 1);
+    const T bad[] = {
+        std::numeric_limits<T>::quiet_NaN(), std::numeric_limits<T>::infinity(), -std::numeric_limits<T>::infinity()};
+    T last1{0};
+    for (int k = 0; k < 600; ++k) {
+        const Vec3<T> x = vec3(T(u(rng)), T(u(rng)), T(u(rng)));
+        const bool fault = k % 40 == 20;
+        const T x1 = fault ? bad[(k / 40) % 3] : x(1);
+        const Vec3<T> y = n.apply(vec3(x(0), x1, x(2)));
+        const Vec3<T> ref = others.apply(vec3(x(0), T(0), x(2)));
+        REQUIRE(y(0) == ref(0));
+        REQUIRE(y(2) == ref(2));
+        if (fault) {
+            REQUIRE(y(1) == last1);
+        } else {
+            REQUIRE(y(1) == axis1.apply(vec3(T(0), x(1), T(0)))(1));
+            last1 = y(1);
+        }
+    }
+}
+
+TEST_CASE("apply holds an axis's last output when a blend overflows", "[dsp][rpm-notch]") {
+    using T = float;
+    RpmNotch<T> n(gyro_config<T>());
+    n.update_rotor_speeds(speeds<T>(hz_to_rad(250), hz_to_rad(260), hz_to_rad(270), hz_to_rad(280)));
+    // Alternating near-maximum samples drive N(y) − y past the range of float.
+    const T big = T(0.9) * std::numeric_limits<T>::max();
+    T previous = n.apply(vec3(T(0), T(0), T(0)))(0);
+    int held = 0;
+    for (int k = 0; k < 64; ++k) {
+        const T x = k % 2 == 0 ? big : -big;
+        const T y = n.apply(vec3(x, T(0), T(0)))(0);
+        REQUIRE(std::isfinite(y));
+        held += y == previous ? 1 : 0;
+        previous = y;
+    }
+    INFO("held samples " << held);
+    REQUIRE(held > 0);
+}
+
 // ── RPM tracking on a synthetic gyro signal ───────────────────────────────
 
 namespace {

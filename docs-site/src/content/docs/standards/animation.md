@@ -82,8 +82,12 @@ Model
   scenario, seed, compiler, and the simulation and trace step sizes. The
   player shows them in a footer, with a link to the scenario source.
 - **ANI-3. Stale traces fail CI.** CI regenerates each committed trace and
-  compares it with the committed copy within the R4 golden tolerance. A
-  model change that alters a trace fails the docs build until the trace is
+  compares it with the committed copy under the `regen`
+  [equivalence profile](#equivalence-profiles). The comparison covers `t`,
+  `channels`, `events`, and `checks`. In `provenance`, the `scenario`,
+  `seed`, `dt_sim`, and `dt_trace` must match exactly. `commit` and
+  `compiler` are excluded, because they change with every rebuild. A model
+  change that alters a trace fails the docs build until the trace is
   regenerated, in the same PR.
 - **ANI-4. Paired with a check.** A V&V animation names the requirement it
   illustrates (BB-V4, BB-I3, …) and the quantitative check behind it, and
@@ -116,16 +120,21 @@ Model
   controls, keyboard operation, and a text description of what happens.
 - **ANI-11. Theme and layout.** They follow the docs' light and dark theme,
   as the SVG figures already do, and work at phone width.
-- **ANI-12. Size budget.** No more than 250 KB of trace per animation after
-  downsampling to the display rate, and no more than 400 KB for the shared
-  WebAssembly module. Three.js is loaded only on pages that use the 3-D view.
+- **ANI-12. Size budget.** Sizes are gzip-compressed bytes (`gzip -9`) of
+  the files as committed or as built:
+  - each trace file: ≤ 250 KB, after downsampling to the display rate;
+  - the WebAssembly module plus its JavaScript loader: ≤ 400 KB together;
+  - three.js is outside the budget, but appears only in the built bundles of
+    pages that use the 3-D view.
+
+  A CI script lists each counted file with its size and fails over budget.
 
 ## Three delivery tiers
 
 | Tier | Mechanism | Used for | Evidence? |
 |---|---|---|---|
 | **Trace playback** | A committed trace (JSON) played by a `TracePlayer` component: a 3-D vehicle view synchronized with SVG plots and a shared time cursor | V&V, deployment, and developer pages | It shows evidence, as a view of a CI-checked trace |
-| **Live in the browser** | The block's headers compiled to WebAssembly with Emscripten; the page steps the real model and controller as the reader moves sliders | Explainers | No: interactive, labelled "exploration, not evidence". CI checks that Wasm and native traces agree on a reference scenario |
+| **Live in the browser** | The block's headers compiled to WebAssembly with Emscripten; the page steps the real model and controller as the reader moves sliders | Explainers | No: interactive, labelled "exploration, not evidence". CI checks that Wasm and native traces agree on a reference scenario under the `wasm` [equivalence profile](#equivalence-profiles) |
 | **Development viewer** | MCAP traces from the scenario runner (BB-D1), opened in Foxglove or Rerun | Local debugging of any scenario | No: a tool, not a page |
 
 Why not video: video can't follow the site theme, can't be scrubbed against
@@ -148,19 +157,85 @@ One schema, `reflex-trace/1`, serves reflex pages and mission replays:
   "t": [0.0, 0.01],
   "channels": {
     "position": [[0, 0, 1], [0, 0, 1.0001]],
-    "attitude": [[1, 0, 0, 0], [0.99999, 0.0021, 0, 0]],
-    "rotor_speeds": [[1660, 1660, 1660, 1660], [1688, 1632, 1688, 1632]],
-    "roll_setpoint": [0.0, 0.35]
+    "attitude": [[1, 0, 0, 0], [0.9999978, 0.0021, 0, 0]],
+    "rotor_speeds": [[1660, 1660, 1660, 1660], [1632, 1688, 1688, 1632]],
+    "roll_setpoint": [0.0, 0.349],
+    "roll_integrator": [0.0, 0.0001]
   },
+  "units": { "roll_integrator": "N·m" },
   "events": [{ "t": 0.0, "label": "roll step 20°" }],
-  "checks": [{ "id": "BB-I2", "metric": "overshoot", "value": 0.071, "limit": 0.10 }]
+  "checks": [{ "id": "BB-I2", "metric": "overshoot", "unit": "1",
+               "value": 0.071, "limit": 0.10, "comparison": "<=", "pass": true }]
 }
 ```
 
-`checks` is what the player shows next to the animation (ANI-4). Channels
-the 3-D view understands (`position`, `attitude`, `rotor_speeds`, thrust,
-setpoints) are named the same way across blocks. Any other channel can be
-plotted.
+#### Field definitions
+
+The schema is normative. A JSON Schema file,
+`docs-site/schemas/reflex-trace-1.schema.json`, checks structure and types.
+A validator script checks the semantic rules a JSON Schema cannot express:
+lengths, monotonicity, and unit norm. CI validates every committed trace,
+and `TracePlayer` refuses a trace that fails.
+
+- **Units.** SI throughout, and every angle in radians, including setpoints
+  and checks. Degrees appear only in human-readable `label` text.
+- **`t`** is time in seconds since the start of the scenario, starting at 0,
+  strictly increasing, and uniformly spaced at `dt_trace` when `dt_trace` is
+  given.
+- **Cardinality.** Each channel has exactly one entry per element of `t`. An
+  entry is a number, or an array of the channel's fixed length.
+- **Reserved channels.** These have fixed shapes and units, and the 3-D view
+  reads them:
+
+  | Channel | Shape | Unit and frame |
+  |---|---|---|
+  | `position` | [x, y, z] | m, world |
+  | `velocity` | [x, y, z] | m/s, world |
+  | `attitude` | [w, x, y, z] | Hamilton unit quaternion, body to world, scalar first; norm within 1e-6 |
+  | `body_rates` | [x, y, z] | rad/s, body |
+  | `rotor_speeds` | [4] | rad/s, PX4 Quad X order |
+  | `rotor_thrusts` | [4] | N, PX4 Quad X order |
+  | `wrench` | [T, τx, τy, τz] | N and N·m, body |
+  | `<quantity>_setpoint` | as `<quantity>` | as `<quantity>`; `roll_setpoint`, `pitch_setpoint`, `yaw_setpoint` in rad |
+
+- **Other channels** must declare a unit in `units`. `"1"` means
+  dimensionless. The player plots them but doesn't interpret them.
+- **`events`** have `t` within the range of `t`, and a display `label`.
+- **`checks`** have `id` (a requirement ID), `metric`, `unit`, `value`,
+  `limit`, `comparison` (`<=` or `>=`), and `pass`. `pass` is computed by
+  the harness and never by the player.
+- **Versioning.** Adding optional fields or reserved channels keeps
+  `reflex-trace/1`. Any change to an existing field's meaning, shape, or unit
+  makes it `reflex-trace/2`.
+
+### Equivalence profiles
+
+Two traces are equivalent under a profile when their `t` arrays match and
+every compared channel satisfies $|a - b| \le a_{\text{tol}} + r_{\text{tol}}\,|b|$
+at every sample. Here $b$ is the reference. The `trace_diff` tool (BB-D3)
+implements these profiles and reports the first sample and channel that
+fail.
+
+| Profile | Used by | Compared | $r_{\text{tol}}$ | $a_{\text{tol}}$ |
+|---|---|---|---|---|
+| `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events` exactly, `checks` values (`pass` exactly) | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds 1e-6 rad/s; other channels 1e-9 in their unit |
+| `wasm` | Tier 2: Wasm against native, reference scenario only | Reserved channels | 1e-9 | as `regen` |
+
+- **Attitude** is compared as the rotation angle
+  $2\,\mathrm{asin}(\lVert \mathrm{vec}(q_a^{-1} \otimes q_b) \rVert)$, so
+  q and −q are equal.
+- **No resampling.** Both traces are written at the same `dt_trace` from the
+  same scenario, so their `t` arrays must be identical. A trace that needs
+  resampling fails the comparison.
+- **Why 1e-9.** Compiler differences (FMA contraction, operation order) and
+  libm differences produce errors of order ε ≈ 2e-16 per operation, which
+  stay below 1e-9 over the 10⁴–10⁵ steps of a docs scenario when the
+  dynamics are not chaotic.
+- **Chaotic scenarios**, such as the intermediate-axis tumble, amplify
+  roundoff exponentially. Such a trace declares an override in
+  `provenance.equivalence`: a shorter comparison horizon or looser tolerances
+  per channel, with a one-line justification. Overrides are reviewed like
+  golden-file changes (BB-R4).
 
 ## Boundary with mission SITL
 

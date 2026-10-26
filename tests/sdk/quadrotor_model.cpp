@@ -1,7 +1,8 @@
 // Unit tests for branes::reflex::model::QuadrotorModel and the math types under
 // it. Each case checks one physical property against a hand-derivable answer:
 // hover equilibrium, free fall, torque-free rotation, torque signs, the motor
-// lag, battery sag, ground contact, and determinism. Run in double and float.
+// lag, battery sag, ground contact, and determinism. Run in double and float;
+// the state invariants also in posit<16,1> and bfloat16.
 
 #include <branes/reflex/math/quat.hpp>
 #include <branes/reflex/math/vec3.hpp>
@@ -10,16 +11,25 @@
 #include <catch2/catch_template_test_macros.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
+#include <universal/number/cfloat/cfloat.hpp>
+#include <universal/number/posit/posit.hpp>
 
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <limits>
+#include <random>
+#include <string>
 #include <type_traits>
 
 using namespace branes::reflex;
 using namespace branes::reflex::model;
 using Catch::Matchers::WithinAbs;
 using Catch::Matchers::WithinRel;
+
+using posit16 = sw::universal::posit<16, 1>;
+using bfloat16 = sw::universal::cfloat<16, 8, std::uint16_t, true, false, false>;  // IEEE-754 single exponent
+using binary16 = sw::universal::cfloat<16, 5, std::uint16_t, true, false, false>;  // IEEE-754 binary16 layout
 
 namespace {
 
@@ -253,4 +263,120 @@ TEST_CASE("determinism: identical inputs give bit-identical trajectories", "[mod
     REQUIRE(a.rotor_speeds == b.rotor_speeds);
     REQUIRE(a.energy == b.energy);
     REQUIRE(a.on_ground == b.on_ground);
+}
+
+TEST_CASE("state violations: each of I2-I5 is named, non-finite first", "[model]") {
+    const QuadrotorModel<double> m(rp1<double>());
+    const auto valid = airborne(1.0, m.hover_rotor_speed());
+    REQUIRE(m.quadrotor_state_violation(valid) == StateViolation::none);
+    REQUIRE(m.quadrotor_state_valid(valid));
+    REQUIRE(std::string(invariant_id(StateViolation::none)).empty());
+
+    const double nan = std::numeric_limits<double>::quiet_NaN();
+    const double inf = std::numeric_limits<double>::infinity();
+    const auto expect = [&](QuadrotorState<double> x, StateViolation v, const char* id) {
+        REQUIRE(m.quadrotor_state_violation(x) == v);
+        REQUIRE_FALSE(m.quadrotor_state_valid(x));
+        REQUIRE(std::string(invariant_id(v)) == id);
+    };
+
+    auto x = valid;
+    x.velocity(1) = nan;
+    expect(x, StateViolation::non_finite, "I4");
+    x = valid;
+    x.rotor_speeds[2] = inf;  // not reported as I3: non-finite is checked first
+    expect(x, StateViolation::non_finite, "I4");
+    x = valid;
+    x.attitude = Quat<double>{1.0, 0.0, 0.0, 1e-7};  // |q|^2 - 1 = 1e-14, far beyond 8 eps
+    expect(x, StateViolation::attitude_not_unit, "I2");
+    x = valid;
+    x.rotor_speeds[0] = -1.0;
+    expect(x, StateViolation::rotor_speed, "I3");
+    x = valid;
+    x.rotor_speeds[3] = m.max_rotor_speed() * 1.001;
+    expect(x, StateViolation::rotor_speed, "I3");
+    x = valid;
+    x.energy = -1.0;
+    expect(x, StateViolation::energy, "I3");
+    x = valid;
+    x.position(2) = -0.01;
+    expect(x, StateViolation::below_ground, "I5");
+
+    // The checking order: I4 before I2 before I3 before I5.
+    x = valid;
+    x.attitude = Quat<double>{2.0, 0.0, 0.0, 0.0};
+    x.position(2) = -1.0;
+    expect(x, StateViolation::attitude_not_unit, "I2");
+    x.energy = nan;
+    expect(x, StateViolation::non_finite, "I4");
+}
+
+TEST_CASE("I2 tolerance is 8 epsilon of the scalar type", "[model]") {
+    REQUIRE(QuadrotorModel<double>::attitude_tolerance() == 8 * std::numeric_limits<double>::epsilon());
+    REQUIRE(QuadrotorModel<float>::attitude_tolerance() == 8 * std::numeric_limits<float>::epsilon());
+    REQUIRE(QuadrotorModel<posit16>::attitude_tolerance() == posit16(8) * std::numeric_limits<posit16>::epsilon());
+}
+
+TEMPLATE_TEST_CASE("I2: from_rotation_vector quaternions pass the epsilon-scaled tolerance",
+                   "[model]",
+                   double,
+                   float,
+                   posit16,
+                   bfloat16) {
+    using T = TestType;
+    const std::uint32_t seed = 20261025;
+    INFO("seed " << seed);
+    std::mt19937 rng(seed);
+    std::uniform_real_distribution<double> angle(-6.0, 6.0);
+    const T tol = QuadrotorModel<T>::attitude_tolerance();
+    for (int i = 0; i < 10000; ++i) {
+        const Vec3<T> theta = vec3(T(angle(rng)), T(angle(rng)), T(angle(rng)));
+        const Quat<T> q = from_rotation_vector(theta);
+        INFO("theta " << double(theta(0)) << ", " << double(theta(1)) << ", " << double(theta(2)));
+        REQUIRE(is_unit(q, tol));
+        REQUIRE(is_unit(normalized(q), tol));
+    }
+}
+
+TEMPLATE_TEST_CASE(
+    "I2-I5 hold in every supported type on a spinning, climbing vehicle", "[model]", double, float, posit16, bfloat16) {
+    using T = TestType;
+    const QuadrotorModel<T> m(rp1<T>());
+    const T w = m.hover_rotor_speed();
+    auto x = airborne(T(100), w);
+    x.body_rates = vec3(T(1), T(-0.5), T(2));
+    const RotorCommand<T> u{{w * T(1.05), w * T(0.98), w * T(1.02), w * T(0.97)}};
+    // step() asserts I2-I5 on its input and result in Debug; check them in Release too.
+    for (int i = 0; i < 2000; ++i) {
+        x = m.step(x, u, T(1e-3));
+        INFO("step " << i << ": " << invariant_id(m.quadrotor_state_violation(x)));
+        REQUIRE(m.quadrotor_state_violation(x) == StateViolation::none);
+    }
+}
+
+TEST_CASE("I1 rejects subnormal parameters, and binary16 cannot represent RP-1's k_f", "[model]") {
+    // A positive subnormal passes "> 0" but overflows 1/m, 1/tau, 1/J.
+    const double tiny = std::numeric_limits<double>::denorm_min();
+    auto p = rp1<double>();
+    p.mass = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.motor_time_constant = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.inertia[2] = tiny;
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p = rp1<double>();
+    p.drag_linear[0] = tiny;  // may be zero, but not subnormal
+    REQUIRE_FALSE(quadrotor_params_valid(p));
+    p.drag_linear[0] = 0.0;
+    REQUIRE(quadrotor_params_valid(p));
+
+    // binary16: only k_f out of range. 1e5 J would overflow binary16, so
+    // the capacity is set to a representable value to isolate k_f.
+    auto h = rp1<binary16>();
+    h.battery_capacity = binary16(1000);
+    REQUIRE_FALSE(quadrotor_params_valid(h));  // k_f = 8.9e-7 < 6.1e-5, binary16's smallest normal
+    h.thrust_coefficient = binary16(1e-3);
+    REQUIRE(quadrotor_params_valid(h));
 }

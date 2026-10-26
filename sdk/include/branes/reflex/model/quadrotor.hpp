@@ -33,15 +33,49 @@
 /// Invariants
 /// ----------
 ///   I1: quadrotor_params_valid(p_)                               — constrains p_
-///   State invariants (checked by quadrotor_state_valid, kept by step()):
-///   I2: the attitude is a unit quaternion (to 1e-6 relative; renormalized every step)
+///   State invariants (checked by quadrotor_state_violation, kept by step()):
+///   I2: the attitude is a unit quaternion: |‖q‖² − 1| ≤ 8·ε (attitude_tolerance())
 ///   I3: 0 ≤ ω_rotor_i ≤ ω_max, and energy ≥ 0
 ///   I4: every value is finite
 ///   I5: position.z ≥ ground_z
 ///
 /// The model is stateless apart from its parameters: step() is a pure function
-/// of (state, command, dt), so the same inputs give bit-identical outputs. It
-/// never allocates and never throws.
+/// of (state, command, dt), so the same inputs give bit-identical outputs.
+///
+/// Validity envelope (BB-S2)
+/// -------------------------
+/// Not modelled: rotor drag and blade flapping, induced-velocity thrust loss in
+/// fast forward flight and climb, ground effect, motor dynamics beyond the
+/// first-order lag and the speed clamp, contact dynamics (contact is a stop:
+/// no friction, bounce, or tip-over), wind, and aerodynamic interference
+/// between rotors.
+/// Expected envelope, until validation (BB-L4) replaces it with a measured
+/// one: airspeed below about 5 m/s, body rates below about 10 rad/s, and rotor
+/// speeds between 10 % and 95 % of ω_max. Outside it the model is unvalidated.
+///
+/// Scalar types (BB-S4)
+/// --------------------
+/// Any type with +, −, ×, ÷, <, sqrt, abs, isfinite, and std::numeric_limits.
+/// The I2 tolerance scales with the type's epsilon, so I2–I5 hold at every
+/// precision: tested in double, float, posit<16,1>, and bfloat16. Every
+/// parameter must be a normal number of the type, so IEEE binary16 cannot
+/// represent RP-1 (k_f = 8.9e-7 is below its normal range) and fails I1.
+/// Accuracy at reduced precision is a characterization result (BB-C3), not a
+/// guarantee.
+///
+/// Resource contract (BB-S5)
+/// -------------------------
+/// No allocation, no exceptions, no system calls. step() runs a fixed
+/// sequence: four derivative() calls, no data-dependent loops, and one
+/// data-dependent branch, ground contact, whose grounded arm adds one
+/// vertical-thrust evaluation. Every other choice (clamps, battery scale,
+/// energy monotonicity) is a select between computed values, not a different
+/// computation. The operation count is therefore fixed per contact arm, and a
+/// test checks it with an operation-counting scalar. Execution time then
+/// depends only on the platform and on operand classes: subnormal operands
+/// are slow on x86 and some FPUs, so a caller that needs a time bound runs
+/// with flush-to-zero. A numeric bound is processor-specific (BB-I5); host
+/// benchmarks are characterization (BB-C4).
 
 #include <branes/reflex/math/quat.hpp>
 #include <branes/reflex/math/vec3.hpp>
@@ -50,6 +84,7 @@
 #include <cassert>
 #include <cmath>
 #include <cstddef>
+#include <limits>
 
 namespace branes::reflex::model {
 
@@ -75,23 +110,54 @@ struct QuadrotorParams {
     T power_coefficient{0};                                  ///< k_p: rotor power = k_p·ω³ [W / (rad/s)³]
 };
 
-/// True if `p` satisfies I1: every parameter finite, and the bounds above.
+/// True if `p` satisfies I1: every parameter finite and within the bounds
+/// above, and every nonzero parameter except ground_z a normal number of T. A
+/// subnormal positive parameter would pass "> 0" and then overflow on
+/// division (1/m, 1/τ, 1/J), so it is rejected.
 template <typename T>
 [[nodiscard]] bool quadrotor_params_valid(const QuadrotorParams<T>& p) noexcept {
     using std::isfinite;
     const T zero{0};
-    bool ok = isfinite(p.mass) && isfinite(p.arm_length) && isfinite(p.thrust_coefficient) &&
-              isfinite(p.torque_coefficient) && isfinite(p.max_thrust) && isfinite(p.motor_time_constant) &&
-              isfinite(p.gravity) && isfinite(p.ground_z) && isfinite(p.battery_capacity) && isfinite(p.battery_sag) &&
-              isfinite(p.power_coefficient);
-    ok = ok && p.mass > zero && p.arm_length > zero && p.thrust_coefficient > zero && p.torque_coefficient > zero &&
-         p.max_thrust > zero && p.motor_time_constant > zero && p.gravity > zero && p.battery_capacity > zero &&
-         p.battery_sag >= zero && p.battery_sag < T(1) && p.power_coefficient >= zero;
+    const T smallest = std::numeric_limits<T>::min();  // smallest positive normal (minpos for posits)
+    const auto positive = [&](T v) { return isfinite(v) && !(v < smallest); };
+    const auto non_negative = [&](T v) { return isfinite(v) && !(v < zero) && (!(zero < v) || !(v < smallest)); };
+    bool ok = positive(p.mass) && positive(p.arm_length) && positive(p.thrust_coefficient) &&
+              positive(p.torque_coefficient) && positive(p.max_thrust) && positive(p.motor_time_constant) &&
+              positive(p.gravity) && positive(p.battery_capacity) && non_negative(p.battery_sag) &&
+              p.battery_sag < T(1) && non_negative(p.power_coefficient) && isfinite(p.ground_z);
     for (std::size_t i = 0; i < 3; ++i) {
-        ok = ok && isfinite(p.inertia[i]) && isfinite(p.drag_linear[i]) && isfinite(p.drag_quadratic[i]) &&
-             p.inertia[i] > zero && p.drag_linear[i] >= zero && p.drag_quadratic[i] >= zero;
+        ok = ok && positive(p.inertia[i]) && non_negative(p.drag_linear[i]) && non_negative(p.drag_quadratic[i]);
     }
     return ok;
+}
+
+/// The first state invariant a state violates, in checking order. Non-finite
+/// values are checked first, because they make every other test meaningless.
+enum class StateViolation {
+    none,
+    non_finite,         ///< I4
+    attitude_not_unit,  ///< I2
+    rotor_speed,        ///< I3: a rotor speed outside [0, ω_max]
+    energy,             ///< I3: negative energy
+    below_ground,       ///< I5
+};
+
+/// The invariant a violation names ("I2" … "I5"), or "" for none.
+[[nodiscard]] constexpr const char* invariant_id(StateViolation v) noexcept {
+    switch (v) {
+    case StateViolation::non_finite:
+        return "I4";
+    case StateViolation::attitude_not_unit:
+        return "I2";
+    case StateViolation::rotor_speed:
+    case StateViolation::energy:
+        return "I3";
+    case StateViolation::below_ground:
+        return "I5";
+    case StateViolation::none:
+        break;
+    }
+    return "";
 }
 
 /// The simulated vehicle state.
@@ -165,10 +231,23 @@ public:
         return i < 2 ? T(1) : T(-1);
     }
 
-    /// The thrust scale from battery sag at energy E.
+    /// The thrust scale from battery sag at energy E. The min is a select, so
+    /// the operation count does not depend on the battery state (BB-S5).
     [[nodiscard]] T thrust_scale(T energy) const {
-        const T used = energy < p_.battery_capacity ? energy / p_.battery_capacity : T(1);
-        return T(1) - p_.battery_sag * used;
+        const T e = energy < p_.battery_capacity ? energy : p_.battery_capacity;
+        return T(1) - p_.battery_sag * (e / p_.battery_capacity);
+    }
+
+    /// The I2 tolerance on |‖q‖² − 1|: 8·ε of the scalar type.
+    ///
+    /// normalized() rounds once in the sqrt and once per component division,
+    /// so each component carries a relative error of at most about 2u
+    /// (u = ε/2). ‖q‖² then has an error of at most about 4u from the
+    /// components and 4u from its own 4 products and 3 sums: 8u = 4ε in total.
+    /// The factor 2 above that covers quaternions built outside step() from
+    /// sin and cos, as from_rotation_vector does.
+    [[nodiscard]] static constexpr T attitude_tolerance() noexcept {
+        return T(8) * std::numeric_limits<T>::epsilon();
     }
 
     /// Thrust of each rotor in state x [N].
@@ -286,19 +365,40 @@ public:
         return y;
     }
 
-    /// True if x satisfies I2–I5 for this vehicle.
-    [[nodiscard]] bool quadrotor_state_valid(const QuadrotorState<T>& x) const {
+    /// The first of I2–I5 that x violates for this vehicle, in the order of
+    /// StateViolation; StateViolation::none if x is valid.
+    [[nodiscard]] StateViolation quadrotor_state_violation(const QuadrotorState<T>& x) const {
         using std::isfinite;
         const auto finite3 = [](const Vec3<T>& v) { return isfinite(v(0)) && isfinite(v(1)) && isfinite(v(2)); };
-        bool ok = finite3(x.position) && finite3(x.velocity) && finite3(x.body_rates) && isfinite(x.energy) &&
-                  isfinite(x.attitude.w) && isfinite(x.attitude.x) && isfinite(x.attitude.y) &&
-                  isfinite(x.attitude.z);         // I4
-        ok = ok && is_unit(x.attitude, T(1e-6));  // I2
-        ok = ok && x.energy >= T(0);              // I3
+        bool finite = finite3(x.position) && finite3(x.velocity) && finite3(x.body_rates) && isfinite(x.energy) &&
+                      isfinite(x.attitude.w) && isfinite(x.attitude.x) && isfinite(x.attitude.y) &&
+                      isfinite(x.attitude.z);
         for (const T w : x.rotor_speeds) {
-            ok = ok && isfinite(w) && w >= T(0) && w <= omega_max_;  // I3, I4
+            finite = finite && isfinite(w);
         }
-        return ok && x.position(2) >= p_.ground_z;  // I5
+        if (!finite) {
+            return StateViolation::non_finite;  // I4
+        }
+        if (!is_unit(x.attitude, attitude_tolerance())) {
+            return StateViolation::attitude_not_unit;  // I2
+        }
+        for (const T w : x.rotor_speeds) {
+            if (w < T(0) || w > omega_max_) {
+                return StateViolation::rotor_speed;  // I3
+            }
+        }
+        if (x.energy < T(0)) {
+            return StateViolation::energy;  // I3
+        }
+        if (x.position(2) < p_.ground_z) {
+            return StateViolation::below_ground;  // I5
+        }
+        return StateViolation::none;
+    }
+
+    /// True if x satisfies I2–I5 for this vehicle.
+    [[nodiscard]] bool quadrotor_state_valid(const QuadrotorState<T>& x) const {
+        return quadrotor_state_violation(x) == StateViolation::none;
     }
 
 private:

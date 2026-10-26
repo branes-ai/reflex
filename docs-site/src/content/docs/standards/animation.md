@@ -83,10 +83,12 @@ Model
   player shows them in a footer, with a link to the scenario source.
 - **ANI-3. Stale traces fail CI.** CI regenerates each committed trace and
   compares it with the committed copy under the `regen`
-  [equivalence profile](#equivalence-profiles). The comparison covers `t`,
-  `channels`, `events`, and `checks`. In `provenance`, the `scenario`,
-  `seed`, `dt_sim`, and `dt_trace` must match exactly. `commit` and
-  `compiler` are excluded, because they change with every rebuild. A model
+  [equivalence profile](#equivalence-profiles). The profile defines how
+  `t`, `channels`, `events`, and `checks` are compared. The fields that say
+  what the trace *is* must match exactly: `schema`, `frames`, `units`, and,
+  in `provenance`, `block`, `scenario`, `seed`, `dt_sim`, and `dt_trace`.
+  `provenance.commit` and `provenance.compiler` are excluded, because they
+  change with every rebuild. A model
   change that alters a trace fails the docs build until the trace is
   regenerated, in the same PR.
 - **ANI-4. Paired with a check.** A V&V animation names the requirement it
@@ -210,16 +212,30 @@ and `TracePlayer` refuses a trace that fails.
 
 ### Equivalence profiles
 
-Two traces are equivalent under a profile when their `t` arrays match and
-every compared channel satisfies $|a - b| \le a_{\text{tol}} + r_{\text{tol}}\,|b|$
-at every sample. Here $b$ is the reference. The `trace_diff` tool (BB-D3)
+Two traces are equivalent under a profile when all of these hold:
+
+1. Their `t` arrays are identical.
+2. The compared channels have the same names, and each channel has the same
+   shape in both traces.
+3. Every component of every sample of every compared channel satisfies
+   $|a - b| \le a_{\text{tol}} + r_{\text{tol}}\,|b|$. Here $b$ is the
+   reference. Tolerances apply per component, not to a vector norm, so
+   `position` is checked on x, y, and z separately. Attitude is the one
+   exception, compared as a single angle (below).
+4. `events` match exactly.
+5. Each check matches the reference check with the same `id`. Its `metric`,
+   `unit`, `limit`, `comparison`, and `pass` match exactly, and its `value`
+   satisfies the component rule with $r_{\text{tol}}$ = 1e-9 and
+   $a_{\text{tol}}$ = 1e-9 in the check's unit. Both traces have the same
+   set of check `id`s.
+ The `trace_diff` tool (BB-D3)
 implements these profiles and reports the first sample and channel that
 fail.
 
 | Profile | Used by | Compared | $r_{\text{tol}}$ | $a_{\text{tol}}$ |
 |---|---|---|---|---|
-| `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events` exactly, `checks` values (`pass` exactly) | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds 1e-6 rad/s; other channels 1e-9 in their unit |
-| `wasm` | Tier 2: Wasm against native, reference scenario only | Reserved channels | 1e-9 | as `regen` |
+| `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events`, and `checks` | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds 1e-6 rad/s; other channels 1e-9 in their unit |
+| `wasm` | Tier 2: Wasm against native, reference scenario only | Reserved channels; rules 2–3 apply to them, and rules 4–5 do not | 1e-9 | as `regen` |
 
 - **Attitude** is compared as the rotation angle
   $2\,\mathrm{asin}(\lVert \mathrm{vec}(q_a^{-1} \otimes q_b) \rVert)$, so

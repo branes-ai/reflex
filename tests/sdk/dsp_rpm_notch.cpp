@@ -94,6 +94,18 @@ TEMPLATE_TEST_CASE("a new RpmNotch passes its input through unchanged", "[dsp][r
     }
 }
 
+TEST_CASE("faded-out notches pass near-maximum samples through exactly", "[dsp][rpm-notch]") {
+    // Alternating ±0.9·max overflows the sections; at w = 0 their outputs must
+    // not enter the blend (0 · inf would make it non-finite).
+    using T = float;
+    RpmNotch<T> n(gyro_config<T>());
+    const T big = T(0.9) * std::numeric_limits<T>::max();
+    for (int k = 0; k < 64; ++k) {
+        const T x = k % 2 == 0 ? big : -big;
+        REQUIRE(n.apply(vec3(x, -x, T(1)))(0) == x);
+    }
+}
+
 TEST_CASE("update_rotor_speeds places, clamps, fades, and parks the notches", "[dsp][rpm-notch]") {
     RpmNotch<double> n(gyro_config<double>());  // min 100 Hz, fade 50 Hz, f_max 3600 Hz
     n.update_rotor_speeds(speeds<double>(hz_to_rad(264), hz_to_rad(60), hz_to_rad(110), hz_to_rad(1500)));

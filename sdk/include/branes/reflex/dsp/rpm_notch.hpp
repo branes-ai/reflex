@@ -14,7 +14,8 @@
 ///  - A centre above f_max = 0.45·fs is out of the section's design range:
 ///    that notch is parked at f_max with weight 0.
 ///  - Each notch's output is blended as y ← y + w·(N(y) − y). Every section
-///    updates even at w = 0, so its history is live when it fades back in.
+///    updates even at w = 0, so its history is live when it fades back in;
+///    at w = 0 the blend is skipped, so the stage passes y through exactly.
 ///
 /// Model
 /// -----
@@ -35,9 +36,11 @@
 ///   (each Biquad keeps its own I1–I2)
 ///
 /// Only the first cfg_.harmonics harmonics are used; the rest stay at the
-/// constructed state. The operation count of apply() depends only on the
-/// configuration; update_rotor_speeds() has two arms per notch (in range, or
-/// above f_max) and a hold arm per rotor.
+/// constructed state. apply() runs 9 operations per section and 3 more per
+/// blended (w ≠ 0) section and axis, so its count is bounded by the
+/// all-weights-on count; a faulted axis skips its later sections.
+/// update_rotor_speeds() has two arms per notch (in range, or above f_max) and
+/// a hold arm per rotor.
 ///
 /// Validity envelope and non-goals: assumes the vibration lies at integer
 /// harmonics of the rotor rate, which flight logs must confirm (F3). It does
@@ -174,7 +177,10 @@ public:
                 const T w = weight_[r][h];
                 for (std::size_t i = 0; i < 3; ++i) {
                     if (isfinite(y[i])) {
-                        y[i] = y[i] + w * (notch_[r][h][i].update(y[i]) - y[i]);
+                        const T filtered = notch_[r][h][i].update(y[i]);
+                        if (w != T(0)) {
+                            y[i] = y[i] + w * (filtered - y[i]);  // at w = 0, pass through exactly
+                        }
                     }
                 }
             }

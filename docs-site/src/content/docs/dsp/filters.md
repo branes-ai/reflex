@@ -105,15 +105,16 @@ series. The three axes share each notch's coefficients.
 A notch whose harmonic lies above $0.45 f_s$ is parked there with weight 0.
 Each notch's output is blended as $y \leftarrow y + w\,(N(y) - y)$, and every
 section keeps updating at $w = 0$, so its history is live when it fades back
-in. `rpm_notch_config_valid` checks a configuration.
+in. At $w = 0$ the blend is skipped and the stage passes its input through
+exactly. `rpm_notch_config_valid` checks a configuration.
 
 ## Contracts
 
 | | |
 |---|---|
 | **Invariants** | `Biquad`: valid (finite, stable) coefficients and a finite history. `RpmNotch`: a valid configuration, every centre in [min_hz, 0.45·fs], every weight in [0, 1], a finite last output. Checked by `assert` after each operation. |
-| **Real-time** | `noexcept`, no allocation. `Biquad::update` runs 9 operations; `RpmNotch::apply` runs a count that depends only on the configuration; `update_rotor_speeds` is bounded by its all-in-range call. `tests/sdk/dsp_resource.cpp` checks all three. |
-| **Scalar types** | Any type with `+ − × ÷ <`, `sin`, `cos`, `abs`, `isfinite`, and construction from `double`. Tested in `double` and `float`. |
+| **Real-time** | `noexcept`, no allocation. Bounded operation counts: `Biquad::update` runs 9 operations on a finite sample and none on a faulted one; `RpmNotch::apply` runs at most its count with every notch blended (fewer while notches are faded out or an axis faults); `update_rotor_speeds` is bounded by its all-in-range call. `tests/sdk/dsp_resource.cpp` checks all three. |
+| **Scalar types** | Filtering and design: any type with `+ − × ÷ <`, `sin`, `cos`, `abs`, `isfinite`, and construction from `double`. The analysis helpers `response()` and `group_delay()` also need `static_cast<double>` from the type. Tested in `double` and `float`. |
 
 16-bit types (`posit<16,1>`, IEEE binary16) are not supported: a notch near
 DC does not survive coefficient rounding in them. The depth they reach is

@@ -1,8 +1,9 @@
-// BB-S5 for branes::reflex::dsp: a fixed operation count per call.
+// BB-S5 for branes::reflex::dsp: a bounded operation count per call.
 //  - Biquad::update runs 9 operations (5 ×, 4 ±) on every finite input and
 //    none on a faulted one (plus one for the debug-only invariant check).
-//  - RpmNotch::apply runs Rotors · harmonics · 3 · (9 + 3) operations: the
-//    count depends only on the configuration.
+//  - RpmNotch::apply runs 9 operations per section and 3 more per blended
+//    (w ≠ 0) section, on each of 3 axes: exactly that count on finite input,
+//    so at most Rotors · harmonics · 3 · (9 + 3).
 //  - RpmNotch::update_rotor_speeds has one arm per notch (in range with a
 //    fade, or parked above f_max) and a hold arm per rotor: every call is
 //    bounded by the all-in-range call, and every all-in-range call equals it.
@@ -16,6 +17,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <limits>
 #include <random>
@@ -69,7 +71,7 @@ TEST_CASE("S5: Biquad::update runs 9 operations per finite sample, 0 on a fault"
     REQUIRE(fault.ops == 0);
 }
 
-TEST_CASE("S5: RpmNotch::apply's operation count depends only on the configuration", "[dsp][resource]") {
+TEST_CASE("S5: RpmNotch::apply's operation count follows the configuration and the weights", "[dsp][resource]") {
     const std::uint32_t seed = 20261026;
     INFO("seed " << seed);
     std::mt19937 rng(seed);
@@ -80,14 +82,23 @@ TEST_CASE("S5: RpmNotch::apply's operation count depends only on the configurati
         cfg.sample_rate = Counted(8000);
         cfg.harmonics = harmonics;
         RpmNotch<Counted> n(cfg);
-        const std::uint64_t expected = 4 * harmonics * 3 * (9 + kCheckOps + 3) + kApplyCheckOps;
+        const std::uint64_t bound = 4 * harmonics * 3 * (9 + kCheckOps + 3) + kApplyCheckOps;
+        std::uint64_t expected = 0;
         for (int k = 0; k < 500; ++k) {
             if (k % 10 == 0) {
                 n.update_rotor_speeds({Counted(w(rng)), Counted(w(rng)), Counted(w(rng)), Counted(w(rng))});
+                std::uint64_t blended = 0;
+                for (std::size_t r = 0; r < 4; ++r) {
+                    for (std::size_t h = 0; h < harmonics; ++h) {
+                        blended += n.weight(r, h) == Counted(0) ? 0 : 1;
+                    }
+                }
+                expected = 4 * harmonics * 3 * (9 + kCheckOps) + blended * 3 * 3 + kApplyCheckOps;
             }
             const Cost c = cost([&] { (void)n.apply(vec3(Counted(u(rng)), Counted(u(rng)), Counted(u(rng)))); });
             INFO("harmonics " << harmonics << ", sample " << k);
             REQUIRE(c.ops == expected);
+            REQUIRE(c.ops <= bound);
             REQUIRE(c.calls == 0);
         }
     }

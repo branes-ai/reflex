@@ -8,8 +8,9 @@ include(${PROJECT_SOURCE_DIR}/cmake/compile_all.cmake)
 # ── SDK layer ──────────────────────────────────────────────────────────────
 file(GLOB SDK_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/sdk/*.cpp)
 # universal::universal so the controllers' type-generic tests can instantiate
-# Universal number types (posit, cfloat).
-compile_all(FOLDER "Tests/sdk" LIBS branes::reflex universal::universal SOURCES ${SDK_SRC})
+# Universal number types (posit, cfloat); sw::dsp (mp-dsp) as the independent
+# reference for the dsp/ filters.
+compile_all(FOLDER "Tests/sdk" LIBS branes::reflex universal::universal sw::dsp SOURCES ${SDK_SRC})
 
 # ── Examples ───────────────────────────────────────────────────────────────
 # End-to-end examples that run reflex-style algorithms through MTL5 and

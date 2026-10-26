@@ -150,9 +150,10 @@ Early stage. Phase 1 has started:
 - a PID controller with derivative-on-measurement, derivative filtering, integral clamping, and anti-windup (`sdk/include/branes/reflex/control/pid.hpp`);
 - a rigid-body quadrotor model, with rotor and motor dynamics, drag, battery sag, and ground contact, on MTL5 fixed-size types (`sdk/include/branes/reflex/model/quadrotor.hpp`);
 - a Quad X mixer that allocates thrust and torque to the rotors, giving up yaw, then collective thrust, then roll and pitch under saturation (`sdk/include/branes/reflex/control/mixer.hpp`);
-- a cascaded multirotor controller (position, tilt-prioritized attitude, and body-rate loops) with anti-windup from the mixer's saturation report and default gains designed from the vehicle file (`sdk/include/branes/reflex/control/cascade.hpp`).
+- a cascaded multirotor controller (position, tilt-prioritized attitude, and body-rate loops) with anti-windup from the mixer's saturation report and default gains designed from the vehicle file (`sdk/include/branes/reflex/control/cascade.hpp`);
+- gyro filters: biquad low-pass and notch sections, and notches that track the rotor harmonics from the rotor speeds (`sdk/include/branes/reflex/dsp/`).
 
-Sensor filtering and the SITL closed loop come next.
+The SITL closed loop comes next.
 
 ## License
 

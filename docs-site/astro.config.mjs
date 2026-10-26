@@ -96,6 +96,10 @@ export default defineConfig({
           ],
         },
         {
+          label: 'Signal Processing',
+          items: [{ label: 'Gyro Filters', slug: 'dsp/filters' }],
+        },
+        {
           label: 'Examples',
           items: [
             { label: 'Mixed-Precision Gyro Filter', slug: 'examples/gyro-lowpass' },

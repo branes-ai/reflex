@@ -199,7 +199,9 @@ against (models).
   violated invariant, with its step and field, and writes a repro file with
   exact (hex-float) inputs that replays bit-identically.
 - **BB-D3. Trace diff.** A tool reports the first divergence between two
-  traces beyond a per-field tolerance.
+  traces beyond per-field tolerances. The tolerances come from a named
+  equivalence profile ([profiles](/standards/animation/#equivalence-profiles))
+  or from a per-block profile defined in the block's V&V plan.
 
 ### Release and consumption (R)
 

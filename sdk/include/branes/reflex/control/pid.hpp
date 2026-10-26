@@ -19,6 +19,10 @@
 ///    further into saturation; it still integrates when the error would pull
 ///    the output back out.
 ///  - **Output saturation** to [output_min, output_max].
+///  - **External saturation.** A downstream stage that cuts the command (a
+///    mixer, a thrust limiter) reports the direction it cut in; the integral
+///    then freezes while the error pushes further that way, exactly as for the
+///    controller's own output limits.
 ///
 /// Model
 /// -----
@@ -110,6 +114,19 @@ public:
     /// @param dt           time since the previous update [s], > 0
     /// @return the saturated control output
     constexpr Real update(Real setpoint, Real measurement, Real dt) noexcept {
+        return update(setpoint, measurement, dt, 0);
+    }
+
+    /// update() with a saturation reported by a downstream stage.
+    ///
+    /// Pre:  as update().
+    /// Post: as update(); in addition, if external_saturation > 0 (the stage
+    ///       delivered less than the output) and the error is positive, or
+    ///       external_saturation < 0 and the error is negative, the integral
+    ///       is unchanged.
+    ///
+    /// @param external_saturation +1 cut high, −1 cut low, 0 not cut
+    constexpr Real update(Real setpoint, Real measurement, Real dt, int external_saturation) noexcept {
         const Real zero{0};
         if (!(zero < dt)) {
             return output_;  // Pre violated: hold output, keep state (I1-I4 untouched)
@@ -137,8 +154,8 @@ public:
         // Conditional integration: if the output would saturate and the error
         // pushes further into that saturation, freeze the integral.
         const Real unsaturated = p_term + candidate + d_term;
-        const bool winding_up_high = cfg_.output_max < unsaturated && zero < error;
-        const bool winding_up_low = unsaturated < cfg_.output_min && error < zero;
+        const bool winding_up_high = (cfg_.output_max < unsaturated || 0 < external_saturation) && zero < error;
+        const bool winding_up_low = (unsaturated < cfg_.output_min || external_saturation < 0) && error < zero;
         if (!winding_up_high && !winding_up_low) {
             integral_ = candidate;
         }

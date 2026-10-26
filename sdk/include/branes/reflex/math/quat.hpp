@@ -81,6 +81,31 @@ template <typename T>
     return mul(to_matrix(q), v);
 }
 
+/// The unit quaternion of the rotation matrix r (Shepperd's method: the
+/// largest of w, x, y, z is recovered from the diagonal, the others from the
+/// off-diagonal terms, so no division is by a small number).
+/// Pre: r is a rotation matrix. Post: R(result) == r to rounding; ‖result‖ = 1.
+template <typename T>
+[[nodiscard]] Quat<T> from_matrix(const Mat3<T>& r) {
+    using std::sqrt;
+    const T trace = r(0, 0) + r(1, 1) + r(2, 2);
+    Quat<T> q;
+    if (trace > T(0)) {
+        const T s = T(2) * sqrt(trace + T(1));  // 4w
+        q = Quat<T>{s / T(4), (r(2, 1) - r(1, 2)) / s, (r(0, 2) - r(2, 0)) / s, (r(1, 0) - r(0, 1)) / s};
+    } else if (r(0, 0) > r(1, 1) && r(0, 0) > r(2, 2)) {
+        const T s = T(2) * sqrt(T(1) + r(0, 0) - r(1, 1) - r(2, 2));  // 4x
+        q = Quat<T>{(r(2, 1) - r(1, 2)) / s, s / T(4), (r(0, 1) + r(1, 0)) / s, (r(0, 2) + r(2, 0)) / s};
+    } else if (r(1, 1) > r(2, 2)) {
+        const T s = T(2) * sqrt(T(1) + r(1, 1) - r(0, 0) - r(2, 2));  // 4y
+        q = Quat<T>{(r(0, 2) - r(2, 0)) / s, (r(0, 1) + r(1, 0)) / s, s / T(4), (r(1, 2) + r(2, 1)) / s};
+    } else {
+        const T s = T(2) * sqrt(T(1) + r(2, 2) - r(0, 0) - r(1, 1));  // 4z
+        q = Quat<T>{(r(1, 0) - r(0, 1)) / s, (r(0, 2) + r(2, 0)) / s, (r(1, 2) + r(2, 1)) / s, s / T(4)};
+    }
+    return normalized(q);
+}
+
 /// The unit quaternion of a rotation by ‖θ‖ about θ/‖θ‖ (the exponential map).
 template <typename T>
 [[nodiscard]] Quat<T> from_rotation_vector(const Vec3<T>& theta) {

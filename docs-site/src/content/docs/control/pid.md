@@ -42,6 +42,13 @@ wound-up integral to unwind. The closed-loop test
 `anti-windup recovers quickly from an unreachable setpoint` pins this: the loop
 settles in under 0.2 s, versus ~2.4 s for a naive integrator.
 
+**External saturation.** A stage after the controller can cut its command,
+as the [mixer](/control/mixer/) does under saturation. The four-argument
+`update(setpoint, measurement, dt, external_saturation)` takes the direction
+of that cut (+1 delivered less than the output, −1 more, 0 not cut) and
+freezes the integral by the same rule as the controller's own limits. The
+[cascaded controller](/control/cascade/) feeds it the mixer's report.
+
 ## Usage
 
 ```cpp

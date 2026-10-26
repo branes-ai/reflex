@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/branes-ai/reflex/compare/v0.3.0...v0.4.0) (2026-10-26)
+
+
+### Features
+
+* **dsp:** biquad low-pass and notch sections, and rpm-tracked notches ([#33](https://github.com/branes-ai/reflex/issues/33)) ([8140cc2](https://github.com/branes-ai/reflex/commit/8140cc2918726e11154a5907278acc7ad33c212c))
+
 ## [0.3.0](https://github.com/branes-ai/reflex/compare/v0.2.0...v0.3.0) (2026-10-26)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.1](https://github.com/branes-ai/reflex/compare/v0.4.0...v0.4.1) (2026-10-26)
+
+
+### Documentation
+
+* **standards:** block pages and animation methodology and plan ([#35](https://github.com/branes-ai/reflex/issues/35)) ([254a18d](https://github.com/branes-ai/reflex/commit/254a18dd8d99d2aa6b762071bf4af25c2d822ef9))
+
 ## [0.4.0](https://github.com/branes-ai/reflex/compare/v0.3.0...v0.4.0) (2026-10-26)
 
 

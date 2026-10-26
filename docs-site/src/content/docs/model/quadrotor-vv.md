@@ -27,11 +27,11 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | Req | Status | Evidence today / gap |
 |---|---|---|
 | S1 spec | ✅ | Equations, conventions, I1–I5, `step()` contract in `quadrotor.hpp` |
-| S2 envelope | ❌ | Non-modelled effects and expected ranges not stated |
+| S2 envelope | ✅ | Non-modelled effects and the expected envelope in the header and the [usage page](/model/quadrotor/#validity-envelope) (M1); measured envelope pending L4 |
 | S3 parameters | ✅ | `quadrotor_params_valid`, units, RP-1 defaults from `vehicles/rp1.yaml` |
-| S4 scalar types | ❌ | I2 tolerance hard-coded to 1e-6 (see [findings](#findings-that-shape-the-plan)); only float and double tested |
-| S5 resource | ◐ | Pure, no allocation, no exceptions, documented in the header; determinism tested. Worst-case execution-time behaviour neither stated nor tested; the bench's mean is characterization, not a bound |
-| T1 unit | ✅ | `tests/sdk/quadrotor_model.cpp`, 12 cases |
+| S4 scalar types | ✅ | I2 tolerance is 8·ε of the type (M1); I2–I5 tested in double, float, posit<16,1>, bfloat16; binary16 rejected by I1 |
+| S5 resource | ◐ | Structural statement in the header, fixed operation count per contact arm tested with `Counted<double>` (`tests/sdk/quadrotor_resource.cpp`, M1). The processor-specific bound is M11 |
+| T1 unit | ✅ | `tests/sdk/quadrotor_model.cpp` and `quadrotor_resource.cpp`; each state invariant's violation is named by `quadrotor_state_violation()` |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
 | T4 properties | ❌ | — |
@@ -52,10 +52,9 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | R1, R4 | ◐ | release-please semver; no golden traces |
 | R2, R3 | ❌ | — |
 
-**Grade today: below C.** Every C requirement except S5 is met. S5 lacks a
-stated and tested worst-case execution-time behaviour. M1 adds the
-structural statement and its operation-count test, and M11 adds a
-processor-specific bound.
+**Grade today: C.** M1 met the last C requirement: S5's structural
+statement and its operation-count test. The processor-specific timing bound
+follows in M11; the grade does not depend on it.
 
 The integration requirements are written BB-I1 to BB-I6 throughout, so
 they are not confused with the model's invariants I1–I5.
@@ -86,7 +85,8 @@ roundoff. Both are covered in [WS2](#ws2-verification).
 
 ## Findings that shape the plan
 
-1. **I2 cannot hold for 16-bit types.** `is_unit(q, T(1e-6))` is a fixed
+1. **I2 cannot hold for 16-bit types.** *Resolved in M1: the tolerance is
+   8·ε (derivation in `attitude_tolerance()`).* Before M1: `is_unit(q, T(1e-6))` is a fixed
    tolerance. bfloat16 and posit16 resolve roughly 1e-2 to 1e-3 near 1, so
    every state fails I2 and Debug builds assert. Decide in WS1: scale the
    tolerance with `std::numeric_limits<T>::epsilon()`, or set a 32-bit floor
@@ -95,7 +95,7 @@ roundoff. Both are covered in [WS2](#ws2-verification).
    monotone energy clamp, and ground contact are non-differentiable. An MPC
    should linearize `derivative()` in free flight, or `step()` away from those
    branches. V5 verifies the smooth regime and documents the non-smooth one.
-3. **No invariant diagnostics.** `quadrotor_state_valid` returns a bool. The
+3. **No invariant diagnostics.** *Resolved in M1.* `quadrotor_state_valid` returns a bool. The
    invariant monitor (D2) needs to know which invariant failed and on which
    field. Add a `quadrotor_state_violation()` that returns an enum, and keep
    the bool as a wrapper.
@@ -519,6 +519,9 @@ gives the same torque sign through it as through the native API.
 
 | Claim | Evidence | Harness | Gate |
 |---|---|---|---|
+| Each state invariant's violation is reported by name | One case per invariant, and the checking order | `tests/sdk/quadrotor_model` | PR |
+| I2–I5 hold at 16-bit precision | 2000 spinning steps in posit<16,1> and bfloat16 | `tests/sdk/quadrotor_model` | PR |
+| step() has a fixed operation count per contact arm | 4000 generated states, all four arms | `tests/sdk/quadrotor_resource` | PR |
 | RK4 is fourth order on the full model | p ∈ [3.7, 4.4], all state groups | `tests/verification/quadrotor_convergence` | PR |
 | Each equation term has the right magnitude | Closed-form cases | `tests/verification/quadrotor_analytic` | PR |
 | Physics symmetries hold | Five metamorphic relations | `tests/verification/quadrotor_metamorphic` | PR |
@@ -541,7 +544,7 @@ Each milestone is one or two PRs and ends at a grade.
 
 | # | PR scope | Workstreams | Grade after |
 |---|---|---|---|
-| M1 | Envelope section, I2 tolerance decision, `quadrotor_state_violation()`, structural timing statement and `Counted<double>` test | WS1 | **C** |
+| M1 ✅ | Envelope section, I2 tolerance decision, `quadrotor_state_violation()`, structural timing statement and `Counted<double>` test | WS1 | **C** |
 | M2 | `tests/verification/`: analytic, convergence, structure, stability, metamorphic | WS2 (V1–V4, V7) | C |
 | M3 | Sanitizer preset and job, RapidCheck property suite, golden traces with `trace_diff` | WS3 (T3, T4), WS6 (D3), WS8 (R4) | **B** |
 | M4 | Jacobian harness with the dual-number type | WS2 (V5) | B |
@@ -563,8 +566,8 @@ start dataset fetching and preprocessing alongside M4–M9.
 
 ## Decisions needed
 
-1. **Minimum scalar precision.** Scale the I2 tolerance with epsilon so that
-   16-bit types are supported, or set a 32-bit floor (finding 1).
+1. **Minimum scalar precision.** *Decided in M1:* the I2 tolerance scales
+   with epsilon, so 16-bit types are supported (finding 1).
 2. **Floating-point contraction policy.** Ship `-ffp-contract=off` on the
    `branes::reflex` target for bitwise cross-compiler replay, or accept
    tolerance-level agreement and keep the speed of FMA.

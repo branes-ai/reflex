@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.3.0](https://github.com/branes-ai/reflex/compare/v0.2.0...v0.3.0) (2026-10-26)
+
+
+### Features
+
+* **control:** cascaded position, attitude, and rate controller for multirotors ([#31](https://github.com/branes-ai/reflex/issues/31)) ([b65075b](https://github.com/branes-ai/reflex/commit/b65075b5cf35b3289e56690f2e061593a0f64986))
+* **control:** quad x mixer with saturation priority ([#27](https://github.com/branes-ai/reflex/issues/27)) ([05fd857](https://github.com/branes-ai/reflex/commit/05fd8570e728c88cfee6651d9bc3837a840372b6)), closes [#19](https://github.com/branes-ai/reflex/issues/19)
+* **model:** reach grade c with envelope, scaled i2 tolerance, and s5 op count ([#30](https://github.com/branes-ai/reflex/issues/30)) ([9cb7658](https://github.com/branes-ai/reflex/commit/9cb7658aec45ffe2878989c2920fac6aecfa3a54))
+
+
+### Documentation
+
+* **control:** quadrotor control guide across six speed strata ([#26](https://github.com/branes-ai/reflex/issues/26)) ([f9214b8](https://github.com/branes-ai/reflex/commit/f9214b865a034134bfe11348699c371285fc3190))
+* **standards:** building block standard and quadrotor v&v plan ([#28](https://github.com/branes-ai/reflex/issues/28)) ([804c060](https://github.com/branes-ai/reflex/commit/804c060257a43d9a420bc1d392de904d518f39d5))
+
+
+### Tests
+
+* **sdk:** share the counted scalar between the s5 resource tests ([#32](https://github.com/branes-ai/reflex/issues/32)) ([7778a92](https://github.com/branes-ai/reflex/commit/7778a92cacfdfabb2999517cb574cb823cd4e4aa))
+
 ## [0.2.0](https://github.com/branes-ai/reflex/compare/v0.1.5...v0.2.0) (2026-10-25)
 
 

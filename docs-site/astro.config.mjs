@@ -78,6 +78,7 @@ export default defineConfig({
           items: [
             { label: 'Building Block Standard', slug: 'standards/building-blocks' },
             { label: 'Block Pages and Animation', slug: 'standards/animation' },
+            { label: 'Trace Player', slug: 'standards/trace-player' },
           ],
         },
         {

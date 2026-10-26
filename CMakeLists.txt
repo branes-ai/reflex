@@ -28,6 +28,7 @@ endif()
 # header-only branes::reflex target.
 option(REFLEX_BUILD_TESTS "Build the tests/ regression suite" ${PROJECT_IS_TOP_LEVEL})
 option(REFLEX_BUILD_BENCH "Build the bench/ micro-benchmarks" ${PROJECT_IS_TOP_LEVEL})
+option(REFLEX_BUILD_TOOLS "Build the tools/ host-side tools (trace scenarios)" ${PROJECT_IS_TOP_LEVEL})
 
 if(REFLEX_BUILD_TESTS)
     include(CTest)
@@ -41,6 +42,10 @@ add_subdirectory(sdk)
 
 if(REFLEX_BUILD_BENCH)
     add_subdirectory(bench)
+endif()
+
+if(REFLEX_BUILD_TOOLS)
+    add_subdirectory(tools)
 endif()
 
 if(REFLEX_BUILD_TESTS AND BUILD_TESTING)

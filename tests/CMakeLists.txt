@@ -17,3 +17,10 @@ compile_all(FOLDER "Tests/sdk" LIBS branes::reflex universal::universal sw::dsp 
 # Universal number types, so CI exercises both dependencies.
 file(GLOB EXAMPLES_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/examples/*.cpp)
 compile_all(FOLDER "Tests/examples" LIBS branes::reflex MTL5::mtl5 universal::universal SOURCES ${EXAMPLES_SRC})
+
+# ── Tools ──────────────────────────────────────────────────────────────────
+# Host-side tools (tools/): the reflex-trace/1 writer.
+if(REFLEX_BUILD_TOOLS)
+    file(GLOB TOOLS_SRC CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/tools/*.cpp)
+    compile_all(FOLDER "Tests/tools" LIBS branes::reflex_trace SOURCES ${TOOLS_SRC})
+endif()

@@ -13,7 +13,10 @@ reflex/
 ├── scripts/              # Developer and CI helper scripts
 ├── sdk/
 │   └── include/branes/reflex/
-│       └── control/      # Controllers (pid.hpp, ...)
+│       ├── control/      # Controllers (pid, mixer, rate, attitude, position, cascade)
+│       ├── dsp/          # Sensor filters (biquad, rpm_notch)
+│       ├── math/         # Fixed-size vectors, matrices, quaternions (vec3, quat)
+│       └── model/        # Plant models (quadrotor)
 ├── tests/
 │   └── sdk/              # Catch2 tests, one executable per file
 ├── tools/                # Host-side developer tools (simulation, tuning, plotting)

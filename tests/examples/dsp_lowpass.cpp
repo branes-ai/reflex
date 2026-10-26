@@ -9,6 +9,10 @@
 //   x[k+1] = A x[k] + B u[k]          (transposed direct form II)
 //   y[k]   = C x[k] + D u[k]
 //
+// The SDK's own section, branes::reflex::dsp::Biquad, realizes the same H(z)
+// in Direct Form I; the last test compares the two realizations sample by
+// sample.
+//
 // It filters a synthetic gyro signal (2 Hz body motion + 180 Hz motor
 // vibration) in double (the reference), float, posit<32,2>, and three 16-bit
 // formats an embedded filter might use: IEEE binary16 (cfloat<16,5>), posit<16,1>,
@@ -16,12 +20,15 @@
 // (passband gain, stopband attenuation) and each arithmetic against the
 // double reference.
 
+#include <branes/reflex/dsp/biquad.hpp>
+
 #include <catch2/catch_test_macros.hpp>
 #include <mtl/mtl.hpp>
 #include <universal/number/cfloat/cfloat.hpp>
 #include <universal/number/fixpnt/fixpnt.hpp>
 #include <universal/number/posit/posit.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <complex>
 #include <cstddef>
@@ -29,6 +36,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <limits>
 #include <numbers>
 #include <string>
 #include <vector>
@@ -49,25 +57,20 @@ constexpr double kVibrationAmp = 0.3;   // rad/s
 constexpr std::size_t kSamples = 2000;  // 2 s
 constexpr std::size_t kSettle = 500;    // skip the first 0.5 s (start-up transient)
 
-// 2nd-order Butterworth low-pass via the bilinear transform with
-// frequency prewarping: H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2).
-struct Biquad {
-    double b0, b1, b2, a1, a2;
-};
+// The design comes from the SDK: branes::reflex::dsp::butterworth_lowpass, a
+// 2nd-order Butterworth low-pass via the bilinear transform with frequency
+// prewarping, H(z) = (b0 + b1 z^-1 + b2 z^-2) / (1 + a1 z^-1 + a2 z^-2).
+using Coefficients = branes::reflex::dsp::BiquadCoefficients<double>;
 
-Biquad butterworth_lowpass(double fc, double fs) {
-    const double k = std::tan(std::numbers::pi * fc / fs);
-    const double q = std::numbers::sqrt2;
-    const double norm = 1.0 / (1.0 + q * k + k * k);
-    const double b0 = k * k * norm;
-    return {b0, 2.0 * b0, b0, 2.0 * (k * k - 1.0) * norm, (1.0 - q * k + k * k) * norm};
+Coefficients butterworth_lowpass(double fc, double fs) {
+    return branes::reflex::dsp::butterworth_lowpass(fc, fs);
 }
 
 // The biquad as a 2-state state-space filter, in arithmetic T.
 template <typename T>
 class StateSpaceFilter {
 public:
-    explicit StateSpaceFilter(const Biquad& f) : A_(2, 2), B_(2, 1), C_(1, 2), D_(1, 1), x_(2) {
+    explicit StateSpaceFilter(const Coefficients& f) : A_(2, 2), B_(2, 1), C_(1, 2), D_(1, 1), x_(2) {
         // Transposed direct form II: y = b0 u + x1,
         //   x1' = -a1 x1 + x2 + (b1 - a1 b0) u,   x2' = -a2 x1 + (b2 - a2 b0) u
         A_(0, 0) = T(-f.a1);
@@ -108,7 +111,7 @@ double vibration(std::size_t k) {
 }
 
 template <typename T>
-std::vector<double> filter_signal(const Biquad& f, bool with_vibration) {
+std::vector<double> filter_signal(const Coefficients& f, bool with_vibration) {
     StateSpaceFilter<T> filter{f};
     std::vector<double> out;
     out.reserve(kSamples);
@@ -141,7 +144,7 @@ struct ArithmeticRun {
 };
 
 template <typename T>
-ArithmeticRun run(const char* name, const Biquad& f, const std::vector<double>& reference) {
+ArithmeticRun run(const char* name, const Coefficients& f, const std::vector<double>& reference) {
     const std::vector<double> out = filter_signal<T>(f, true);
     bool finite = true;
     for (double v : out) {
@@ -153,19 +156,19 @@ ArithmeticRun run(const char* name, const Biquad& f, const std::vector<double>& 
 
 // Frequency response H(e^{j 2 pi f / fs}) of the biquad, evaluated directly
 // from its transfer function.
-std::complex<double> response(const Biquad& f, double hz) {
+std::complex<double> response(const Coefficients& f, double hz) {
     const std::complex<double> z_inv = std::polar(1.0, -2.0 * std::numbers::pi * hz / kFs);
     return (f.b0 + f.b1 * z_inv + f.b2 * z_inv * z_inv) / (1.0 + f.a1 * z_inv + f.a2 * z_inv * z_inv);
 }
 
 // Phase delay [s]: how far a sinusoid at `hz` is shifted in time.
-double phase_delay_s(const Biquad& f, double hz) {
+double phase_delay_s(const Coefficients& f, double hz) {
     return -std::arg(response(f, hz)) / (2.0 * std::numbers::pi * hz);
 }
 
 // Group delay [s]: -d(phase)/d(omega), by central difference (the phase is
 // smooth and far from +/-pi wrap at the frequencies used here).
-double group_delay_s(const Biquad& f, double hz) {
+double group_delay_s(const Coefficients& f, double hz) {
     const double dh = 1e-3;
     const double dphi = std::arg(response(f, hz + dh) / response(f, hz - dh));
     return -dphi / (2.0 * std::numbers::pi * 2.0 * dh);
@@ -206,7 +209,7 @@ std::string env_var(const char* name) {
 
 // Opt-in trace export for the docs figures (docs-site/scripts/gen-gyro-figures.mjs):
 // set REFLEX_DSP_TRACE_DIR to a directory and this writes gyro_lowpass.json.
-void write_trace(const Biquad& f, const std::vector<double>& output, double measured_lag_s) {
+void write_trace(const Coefficients& f, const std::vector<double>& output, double measured_lag_s) {
     const std::string dir = env_var("REFLEX_DSP_TRACE_DIR");
     if (dir.empty()) {
         return;
@@ -254,7 +257,7 @@ void write_trace(const Biquad& f, const std::vector<double>& output, double meas
 }  // namespace
 
 TEST_CASE("dsp: butterworth low-pass meets its spec in double", "[dsp][example]") {
-    const Biquad f = butterworth_lowpass(kCutoff, kFs);
+    const Coefficients f = butterworth_lowpass(kCutoff, kFs);
     const std::vector<double> motion_only = filter_signal<double>(f, false);
     const std::vector<double> with_vibration = filter_signal<double>(f, true);
 
@@ -285,7 +288,7 @@ TEST_CASE("dsp: butterworth low-pass meets its spec in double", "[dsp][example]"
 }
 
 TEST_CASE("dsp: the same filter in 32-bit and 16-bit arithmetic", "[dsp][example][posit]") {
-    const Biquad f = butterworth_lowpass(kCutoff, kFs);
+    const Coefficients f = butterworth_lowpass(kCutoff, kFs);
     const std::vector<double> reference = filter_signal<double>(f, true);
 
     const ArithmeticRun runs[] = {
@@ -320,7 +323,7 @@ TEST_CASE("dsp: the same filter in 32-bit and 16-bit arithmetic", "[dsp][example
 }
 
 TEST_CASE("dsp: the filter delays the motion by its phase delay", "[dsp][example]") {
-    const Biquad f = butterworth_lowpass(kCutoff, kFs);
+    const Coefficients f = butterworth_lowpass(kCutoff, kFs);
 
     // Analytic: the 2 Hz motion is shifted by the phase delay at 2 Hz, and in
     // the passband phase delay ~ group delay (a near-pure time shift).
@@ -349,4 +352,47 @@ TEST_CASE("dsp: the filter delays the motion by its phase delay", "[dsp][example
     REQUIRE(std::abs(group_s - analytic_s) < 0.1e-3);  // passband: ~ pure time shift
 
     write_trace(f, filter_signal<double>(f, true), measured_s);
+}
+
+TEST_CASE("dsp: the MTL5 state-space realization matches the SDK's Direct Form I", "[dsp][example]") {
+    // Two realizations of one H(z): MTL5's transposed direct form II above and
+    // branes::reflex::dsp::Biquad (Direct Form I). Each rounds at most five
+    // products and four sums per step, on terms bounded by the input X, the
+    // output Y <= ||h||_1 X, and (transposed form) its two states, each below
+    // (|b1| + |b2|) X + (|a1| + |a2|) Y; the errors pass through 1/A(z). The
+    // tolerance is the sum of both bounds.
+    const Coefficients f = butterworth_lowpass(kCutoff, kFs);
+    const auto l1 = [](double b0, double b1, double b2, double a1, double a2) {
+        double x1 = 0, x2 = 0, y1 = 0, y2 = 0, sum = 0;
+        for (int k = 0; k < 100000; ++k) {
+            const double x = k == 0 ? 1.0 : 0.0;
+            const double y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1;
+            x1 = x;
+            y2 = y1;
+            y1 = y;
+            sum += std::abs(y);
+        }
+        return sum;
+    };
+    const double x_max = kMotionAmp + kVibrationAmp;
+    const double h_l1 = l1(f.b0, f.b1, f.b2, f.a1, f.a2);
+    const double feedback_l1 = l1(1, 0, 0, f.a1, f.a2);
+    const double y_max = h_l1 * x_max;
+    const double u = std::numeric_limits<double>::epsilon() / 2;
+    const double gamma5 = 5 * u / (1 - 5 * u);
+    const double terms =
+        (std::abs(f.b0) + std::abs(f.b1) + std::abs(f.b2)) * x_max + (std::abs(f.a1) + std::abs(f.a2)) * y_max;
+    const double state = (std::abs(f.b1) + std::abs(f.b2)) * x_max + (std::abs(f.a1) + std::abs(f.a2)) * y_max;
+    const double tol = gamma5 * (terms + (terms + 2 * state)) * feedback_l1;
+
+    StateSpaceFilter<double> mtl5{f};
+    branes::reflex::dsp::Biquad<double> sdk{f};
+    double worst = 0.0;
+    for (std::size_t k = 0; k < kSamples; ++k) {
+        const double x = motion(k) + vibration(k);
+        worst = std::max(worst, std::abs(mtl5.step(x) - sdk.update(x)));
+    }
+    std::printf("MTL5 state space vs SDK Biquad: worst difference %.3e, bound %.3e\n", worst, tol);
+    REQUIRE(worst <= tol);
 }

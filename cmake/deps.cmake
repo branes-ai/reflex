@@ -7,9 +7,9 @@
 # MTL5 is part of branes::reflex's interface: the quadrotor model (and the
 # linear-algebra components after it) use its fixed-size, stack-allocated
 # vectors and matrices, so it is fetched for every build, including
-# FetchContent consumers. Catch2 and Universal are fetched only when tests are
-# built; Universal stays test-only, since the components are generic and never
-# name a Universal type.
+# FetchContent consumers. Catch2, Universal, and mp-dsp are fetched only when
+# tests are built; Universal stays test-only, since the components are generic
+# and never name a Universal type, and mp-dsp is the dsp/ tests' reference.
 
 include(FetchContent)
 
@@ -137,4 +137,35 @@ if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
             set_target_properties(universal PROPERTIES SYSTEM ON)
         endif()
     endif()
+endif()
+
+# ── stillwater-sc/mp-dsp — test-only reference implementation ───────
+# The dsp/ tests compare reflex's filter designs and outputs against mp-dsp's
+# independent implementation (BB-V6, reflex#21). mp-dsp is not part of
+# branes::reflex's interface: its designs throw on bad input and do not build
+# with -fno-exceptions (stillwater-sc/mp-dsp#217), so the flight path keeps
+# reflex's own. Header-only populate, no add_subdirectory (its CMakeLists
+# would fetch its own MTL5 and Universal and build its tests).
+set(REFLEX_MPDSP_VERSION 0.10.0)
+if(REFLEX_BUILD_TESTS AND BUILD_TESTING)
+    if(FETCHCONTENT_SOURCE_DIR_MPDSP)
+        message(STATUS "mp-dsp: using local checkout ${FETCHCONTENT_SOURCE_DIR_MPDSP} (pin v${REFLEX_MPDSP_VERSION} bypassed)")
+    else()
+        message(STATUS "mp-dsp: fetching v${REFLEX_MPDSP_VERSION} headers")
+    endif()
+    FetchContent_Declare(
+        mpdsp
+        GIT_REPOSITORY https://github.com/stillwater-sc/mp-dsp.git
+        GIT_TAG        v${REFLEX_MPDSP_VERSION}
+        GIT_SHALLOW    TRUE
+        SOURCE_SUBDIR  _header_only_no_build
+    )
+    FetchContent_MakeAvailable(mpdsp)
+
+    add_library(mpdsp INTERFACE)
+    add_library(sw::dsp ALIAS mpdsp)
+    target_include_directories(mpdsp INTERFACE ${mpdsp_SOURCE_DIR}/include)
+    target_link_libraries(mpdsp INTERFACE universal::universal MTL5::mtl5)
+    target_compile_features(mpdsp INTERFACE cxx_std_20)
+    set_target_properties(mpdsp PROPERTIES SYSTEM ON)
 endif()

@@ -10,15 +10,20 @@
     "build": "astro build",
     "build:full": "npm run api && npm run build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "traces:check": "node scripts/trace/check.mjs",
+    "trace-diff": "node scripts/trace/trace-diff.mjs",
+    "size-budget": "node scripts/trace/size-budget.mjs"
   },
   "dependencies": {
     "@astrojs/starlight": "^0.37.3",
+    "ajv": "^8.17.1",
     "astro": "^5.6.1",
     "katex": "^0.17.0",
     "rehype-katex": "^7.0.1",
     "rehype-rewrite": "^4.0.4",
     "remark-math": "^6.0.0",
-    "sharp": "^0.34.2"
+    "sharp": "^0.34.2",
+    "three": "^0.180.0"
   }
 }

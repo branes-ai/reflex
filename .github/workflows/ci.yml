@@ -106,3 +106,48 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Test
         run: ctest --preset ${{ matrix.preset }}
+
+  # Docs traces (docs/standards/animation, ANI-3 and ANI-12): every committed
+  # reflex-trace/1 file is valid and equivalent, under the `regen` profile, to
+  # a fresh run of its scenario with both Linux compilers; the docs site builds
+  # (TracePlayer refuses invalid traces); and the size budget holds.
+  docs-traces:
+    name: Docs traces
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+      - name: Install CMake 4.x + Ninja
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb  # v4.4.2
+        with:
+          cmakeVersion: "~4.0.0"
+      - name: Setup Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38  # v6
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: docs-site/package-lock.json
+      - name: Install docs dependencies
+        working-directory: docs-site
+        run: npm ci
+      - name: Validate committed traces
+        working-directory: docs-site
+        run: npm run traces:check
+      - name: Regenerate traces (gcc) and compare
+        run: |
+          cmake --preset gcc-release -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF
+          scripts/gen-traces.sh gcc-release build/traces-gcc
+          (cd docs-site && npm run traces:check -- --regen ../build/traces-gcc)
+      - name: Regenerate traces (clang) and compare
+        run: |
+          cmake --preset clang-release -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF
+          scripts/gen-traces.sh clang-release build/traces-clang
+          (cd docs-site && npm run traces:check -- --regen ../build/traces-clang)
+      - name: Build docs site
+        working-directory: docs-site
+        run: npm run build
+      - name: Size budget
+        working-directory: docs-site
+        run: npm run size-budget

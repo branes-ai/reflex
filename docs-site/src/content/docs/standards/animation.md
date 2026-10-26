@@ -1,0 +1,230 @@
+---
+title: Block Pages and Animation
+description: The four pages every reflex block publishes, how animations are generated from the block's own code, where reflex animation ends and mission SITL begins, and the plan to build it.
+---
+
+Each reflex block captures dynamics that are hard to see in equations and
+tables: motor lag feeding into attitude, saturation priority in the mixer,
+windup in a PID, a notch tracking a rotor harmonic. Animations show those
+dynamics directly. They are also a way to mislead: a smooth animation of a
+wrong trace builds false confidence faster than any table. This page defines
+how reflex uses animation so that it explains without misleading. It covers:
+
+- the four pages each block publishes, and what animation does on each;
+- the rules every animation follows (generated from the block's own code,
+  with provenance, paired with the check it illustrates);
+- the boundary with mission SITL in consuming repos such as racing-drone;
+- the infrastructure and the order of work.
+
+## Assessment
+
+**Add it, at the block level, with strict rules.**
+
+- **Reflex has to own block-level animation; mission SITL cannot.** A
+  racing-drone SITL scene shows a mission, with gates, a course, perception,
+  and every block running at once. It cannot isolate one block's behaviour,
+  so it cannot show why motor lag costs phase margin, or which torque the
+  mixer gives up first. Those explanations belong next to the block, in the
+  repo that defines it and that its consumers read.
+- **Animation helps with exactly the things these blocks are hard on.**
+  Attitude on SO(3), cross-coupling, saturation, and time delay are
+  difficult to understand from plots alone, and easy to see in a 3-D view
+  synchronized with plots.
+- **It reuses evidence that is already planned.** The V&V plans already
+  produce traces: scenarios, golden traces, closed-loop runs (BB-C1, BB-D1,
+  BB-I2). An animation is a view of a trace the harness produces anyway, so
+  the marginal cost is the player, not the content.
+- **The risk is real and manageable.** Animations go stale and can look
+  convincing while being wrong. Both risks are handled by the same rule that
+  already governs figures (BB-C1): everything is generated from the block's
+  code, carries its provenance, is checked for staleness in CI, and is
+  paired with a quantitative check.
+
+Mission SITL in racing-drone keeps everything that is about the mission. The
+two share a trace schema and a player, so they look consistent and nothing
+is built twice ([boundary](#boundary-with-mission-sitl)).
+
+## Four pages per block
+
+| Page | Reader and question | Content | Role of animation |
+|---|---|---|---|
+| **Explainer** | A newcomer: how does this work, and why? | The physics or algorithm, built up one idea at a time | Central. Interactive widgets running the real block in the browser (Wasm), with parameters to vary |
+| **Developer guide** | A contributor: how do I change, test, or debug it? | API, conventions, contracts, harnesses, debugging workflow | Supporting. Replays of the debug tools, such as an invariant violation found by the monitor and replayed |
+| **V&V and datasheet** | A reviewer: what is shown, and how well? | The V&V plan, evidence ledger, generated datasheet | Illustrative only. Each animation sits next to the metric it illustrates and states the pass criterion |
+| **Deployment guide** | An integrator: how do I use it on my vehicle, and where does it break? | Parameter identification, rates and timing budget, envelope, failure behaviour, consumer contract | Shows the envelope edges and failure modes, such as saturation, rotor loss, and battery sag |
+
+The current usage page becomes the developer guide. The V&V plan and the
+datasheet together become the V&V page. The explainer and deployment pages
+are new, and can be short for small blocks. The
+[quadrotor control guide](/control/quadrotor-control/) is already an
+explainer for the control layer as a whole.
+
+Pages are grouped per block in the sidebar:
+
+```text
+Model
+└── Quadrotor
+    ├── Explainer
+    ├── Developer guide      (today's model/quadrotor)
+    ├── V&V and datasheet    (today's model/quadrotor-vv + datasheet)
+    └── Deployment guide
+```
+
+## Animation rules
+
+### Provenance and truthfulness
+
+- **ANI-1. Generated from the block's code.** An animation renders a trace
+  produced by the block's own C++: a `characterize/`, `sim/`, or test
+  executable, or the same headers compiled to WebAssembly. Dynamics are never
+  re-implemented in JavaScript, and motion is never keyframed by hand.
+- **ANI-2. Provenance on screen.** Each trace records the commit, block,
+  scenario, seed, compiler, and the simulation and trace step sizes. The
+  player shows them in a footer, with a link to the scenario source.
+- **ANI-3. Stale traces fail CI.** CI regenerates each committed trace and
+  compares it with the committed copy within the R4 golden tolerance. A
+  model change that alters a trace fails the docs build until the trace is
+  regenerated, in the same PR.
+- **ANI-4. Paired with a check.** A V&V animation names the requirement it
+  illustrates (BB-V4, BB-I3, …) and the quantitative check behind it, and
+  its caption states what to look for and the pass criterion. An animation
+  is never the evidence itself.
+- **ANI-5. Honest time and scale.** Time runs at 1× unless the player shows
+  the rate (for example "0.1×"). Exaggerated geometry, such as attitude ×5 or
+  a scaled thrust vector, is labelled on screen. Nothing is exaggerated
+  silently.
+- **ANI-6. Conventions visible.** World and body axes (z up), rotor numbers,
+  and spin directions are drawn in the same PX4 Quad X convention as the
+  model, and a legend states the frames.
+
+### Pedagogy
+
+- **ANI-7. One idea per animation.** Each animation answers one question,
+  stated as its title ("Why does the roll step overshoot?"). Explainers build
+  up in sequence: rotor, then thrust, torque, attitude, translation.
+- **ANI-8. Predict, then show.** Explainer widgets ask the reader what will
+  happen before playing, where that helps, for example "Increase τ: does the
+  overshoot grow or shrink?"
+- **ANI-9. Only parameters that teach.** Interactive widgets expose the two
+  or three parameters that drive the idea, with ranges inside the block's
+  validity envelope (BB-S2), and say so when the reader reaches an edge.
+
+### Accessibility and cost
+
+- **ANI-10. Readers control playback.** Animations start paused and respect
+  `prefers-reduced-motion`. They have play, pause, scrub, and speed
+  controls, keyboard operation, and a text description of what happens.
+- **ANI-11. Theme and layout.** They follow the docs' light and dark theme,
+  as the SVG figures already do, and work at phone width.
+- **ANI-12. Size budget.** No more than 250 KB of trace per animation after
+  downsampling to the display rate, and no more than 400 KB for the shared
+  WebAssembly module. Three.js is loaded only on pages that use the 3-D view.
+
+## Three delivery tiers
+
+| Tier | Mechanism | Used for | Evidence? |
+|---|---|---|---|
+| **Trace playback** | A committed trace (JSON) played by a `TracePlayer` component: a 3-D vehicle view synchronized with SVG plots and a shared time cursor | V&V, deployment, and developer pages | It shows evidence, as a view of a CI-checked trace |
+| **Live in the browser** | The block's headers compiled to WebAssembly with Emscripten; the page steps the real model and controller as the reader moves sliders | Explainers | No: interactive, labelled "exploration, not evidence". CI checks that Wasm and native traces agree on a reference scenario |
+| **Development viewer** | MCAP traces from the scenario runner (BB-D1), opened in Foxglove or Rerun | Local debugging of any scenario | No: a tool, not a page |
+
+Why not video: video can't follow the site theme, can't be scrubbed against
+plots, can't carry machine-checkable provenance, and can't be diffed. It is
+also large in git. The trace is the artifact, and the player is code.
+
+### Trace schema
+
+One schema, `reflex-trace/1`, serves reflex pages and mission replays:
+
+```json
+{
+  "schema": "reflex-trace/1",
+  "provenance": {
+    "commit": "804c060", "block": "model/quadrotor",
+    "scenario": "sim/scenarios/quadrotor/roll_step.json", "seed": 7,
+    "compiler": "gcc 13.2 -O2", "dt_sim": 0.0005, "dt_trace": 0.01
+  },
+  "frames": { "world": "z-up", "body": "x-forward y-left z-up", "rotors": "px4-quad-x" },
+  "t": [0.0, 0.01],
+  "channels": {
+    "position": [[0, 0, 1], [0, 0, 1.0001]],
+    "attitude": [[1, 0, 0, 0], [0.99999, 0.0021, 0, 0]],
+    "rotor_speeds": [[1660, 1660, 1660, 1660], [1688, 1632, 1688, 1632]],
+    "roll_setpoint": [0.0, 0.35]
+  },
+  "events": [{ "t": 0.0, "label": "roll step 20°" }],
+  "checks": [{ "id": "BB-I2", "metric": "overshoot", "value": 0.071, "limit": 0.10 }]
+}
+```
+
+`checks` is what the player shows next to the animation (ANI-4). Channels
+the 3-D view understands (`position`, `attitude`, `rotor_speeds`, thrust,
+setpoints) are named the same way across blocks. Any other channel can be
+plotted.
+
+## Boundary with mission SITL
+
+| Concern | Reflex | Mission repo (racing-drone) |
+|---|---|---|
+| Scope | One block, or the reference closed loop (BB-I1) | The full stack in a mission |
+| Scene | Minimal: axes, ground grid, vehicle glyph, force vectors | Course, gates, environment, other agents |
+| Question answered | How the block behaves, and why | Whether the mission succeeds, and how fast |
+| Scenarios | Block characterization, envelope edges, faults | Mission profiles, races, operator workflows |
+| Rendering | Docs-site player (Tier 1) and Wasm widgets (Tier 2) | Its SITL renderer (Gazebo or another engine), plus the same player for docs |
+| Shared | Trace schema `reflex-trace/1` and the `TracePlayer` component, published from reflex | Consumes both, and exports mission replays in the schema |
+
+The rule: if an animation needs mission assets or more than the reference
+closed loop, it belongs in the mission repo. If it explains a block, it
+belongs in reflex, even when the scenario was found in mission SITL. Such a
+scenario is reduced to a block-level reproduction and added to reflex's
+scenario suite, which is how mission findings reach the block's V&V.
+
+## How this fits the block workflow
+
+Block work is driven by the agent working through the racing-drone issues.
+To keep that agent's PRs small, the standard splits the work:
+
+- **Block PRs** keep adding what they already add: tests, a usage page, and
+  closed-loop scenarios. Each scenario writes a `reflex-trace/1` file when
+  `REFLEX_TRACE_DIR` is set, which is the same opt-in pattern the gyro
+  example uses. That is the only animation-related requirement on a block PR.
+- **Documentation PRs**, separate and in this workstream, add the explainer,
+  deployment page, and animations from those traces.
+
+Animation is not part of a block's grade. Grades measure evidence, and an
+animation is a view of evidence. One addition to the building block standard
+is proposed: **BB-R5, deployment guide**, required for grade A, because
+integrators need the envelope and failure behaviour in a form they can act
+on.
+
+## Plan
+
+| Phase | Deliverables | Exit criteria |
+|---|---|---|
+| **P0. Infrastructure** | `reflex-trace/1` schema and a C++ writer in `tools/`; `TracePlayer` Astro component (time base, controls, keyboard, reduced motion); plot panel built on the existing `SignalFigure` style with a time cursor; `VehicleView` (three.js: axes, grid, Quad X glyph with rotor numbers and spin arrows, thrust vectors, body axes, trail); CI staleness and size-budget checks | A test trace plays on a docs page in both themes and at phone width; changing the model makes CI fail until the trace is regenerated |
+| **P1. Quadrotor model pilot** | Explainer: rotor to thrust and torque; motor-lag step; roll spin-up coupling into translation; torque-free tumbling with asymmetric inertia (the intermediate-axis instability), with energy and angular momentum plotted flat. V&V: mirror relation side by side (BB-V4); trajectories against dt (BB-V2); ground contact. Deployment: full-throttle punch-out into saturation; battery sag. Developer guide: an invariant-violation replay | Each animation meets ANI-1 to ANI-12; page review by one newcomer and one integrator |
+| **P2. Live widgets** | Emscripten build target (pinned emsdk) of the model, mixer, and cascade with a small C ABI; explainer widgets with sliders for τ, inertia, and gains; CI checks that Wasm and native traces agree | Widgets run the real headers; agreement within the golden tolerance on the reference scenario |
+| **P3. Control and DSP blocks** | PID: windup and the anti-windup clamp, with the integrator state shown against saturation. Mixer: rotor thrust bars at their limits, and the torque given up first. Cascade: closed-loop roll step and waypoint run, with each loop's setpoint shown. Filters: a signal through an RPM-tracked notch during a throttle sweep, with an animated spectrogram | Four pages per block for each of these blocks |
+| **P4. Scenario gallery** | Nightly scenario runs (BB-I2) publish their traces; a gallery page lists every scenario with playback and its checks | Gallery regenerates nightly; a failing scenario shows as failing |
+| **P5. Shared with racing-drone** | `TracePlayer` and the schema published for reuse (an npm package or a versioned asset); racing-drone exports mission replays in `reflex-trace/1` | A racing-drone replay plays in the same player |
+
+P0 and P1 come first: the quadrotor model has the richest dynamics and the
+most V&V content to illustrate. P1 is also the test of whether the method
+pays for itself. If newcomers and integrators don't find the pages clearer
+than the static ones, stop at P1 and keep the player for V&V pages only.
+P2 goes after P1, because Wasm adds a toolchain to CI and only explainers
+need it.
+
+## Decisions needed
+
+1. **Three.js on the docs site.** It adds roughly 150 KB gzipped on pages
+   with a 3-D view. The alternative is a 2-D orthographic view drawn in SVG,
+   which is lighter but can't show attitude on SO(3) well.
+2. **Emscripten in CI** for P2: a pinned emsdk on the docs workflow, or a
+   separate job that publishes the Wasm module as a build artifact.
+3. **Sidebar restructure** to one group per block with four pages. This
+   moves existing URLs, so it needs redirects.
+4. **BB-R5** (deployment guide) added to the building block standard for
+   grade A.
+5. **Where the shared player lives** for P5: in reflex's docs-site, or a
+   small separate package that reflex and racing-drone both depend on.

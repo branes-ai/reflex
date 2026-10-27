@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/branes-ai/reflex/compare/v0.5.1...v0.6.0) (2026-10-27)
+
+
+### Features
+
+* **docs:** live webassembly widgets (animation plan p2) ([#41](https://github.com/branes-ai/reflex/issues/41)) ([95c5a21](https://github.com/branes-ai/reflex/commit/95c5a214ebc0585bd68fe26bdc19c45f2fb16925))
+
 ## [0.5.1](https://github.com/branes-ai/reflex/compare/v0.5.0...v0.5.1) (2026-10-27)
 
 

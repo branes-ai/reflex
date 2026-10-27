@@ -2,7 +2,7 @@
 // trace's time axis, in the same style as the SignalFigure charts. The client
 // moves a time cursor across them and updates the legend readouts.
 
-import { channelUnit } from '../../lib/trace/validate.js';
+import { channelUnit } from '../../lib/trace/channels.js';
 
 export interface PlotSpec {
   /** Channel to plot. */
@@ -76,10 +76,11 @@ export function readoutDecimals(step: number): number {
   return decimals(step) + 1;
 }
 
-// Ids for the clip paths of zoomed plots, unique within a build.
-let clipId = 0;
-
-export function renderPlot(trace: Trace, spec: PlotSpec) {
+/**
+ * Renders one panel. `key` makes the panel's SVG ids unique on the page; the
+ * player passes the same key when it re-renders a panel for a live trace.
+ */
+export function renderPlot(trace: Trace, spec: PlotSpec, key = '') {
   const { t } = trace;
   const data = trace.channels[spec.channel];
   if (!data) throw new Error(`TracePlayer: no channel "${spec.channel}" in the trace`);
@@ -160,8 +161,8 @@ export function renderPlot(trace: Trace, spec: PlotSpec) {
     `<line class="axis" x1="${X0}" x2="${X1}" y1="${BOTTOM}" y2="${BOTTOM}"/>` + xticks +
     `<text class="tick" x="6" y="${BOTTOM + 15}">t [s]</text>` +
     (spec.yRange
-      ? `<clipPath id="tp-clip-${++clipId}"><rect x="${X0}" y="${TOP}" width="${X1 - X0}" height="${BOTTOM - TOP}"/></clipPath>` +
-        `<g clip-path="url(#tp-clip-${clipId})">${lines}</g>`
+      ? `<clipPath id="tp-clip-${key}"><rect x="${X0}" y="${TOP}" width="${X1 - X0}" height="${BOTTOM - TOP}"/></clipPath>` +
+        `<g clip-path="url(#tp-clip-${key})">${lines}</g>`
       : lines) +
     `<line class="tp-cursor" x1="${X0}" x2="${X0}" y1="${TOP - 2}" y2="${BOTTOM}"/>` +
     `</svg>`;

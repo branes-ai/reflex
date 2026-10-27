@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/branes-ai/reflex/compare/v0.4.1...v0.5.0) (2026-10-26)
+
+
+### Features
+
+* **docs:** trace player infrastructure (animation plan p0) ([#37](https://github.com/branes-ai/reflex/issues/37)) ([a3d6ecb](https://github.com/branes-ai/reflex/commit/a3d6ecbad2140b8badac29573e6c41594b818ce0))
+
 ## [0.4.1](https://github.com/branes-ai/reflex/compare/v0.4.0...v0.4.1) (2026-10-26)
 
 

@@ -7,8 +7,14 @@
 // The trace is validated at build time: an invalid trace fails the docs build
 // (the player refuses it). Dynamics are never computed here; the view shows
 // each sample as recorded (sample-and-hold, no interpolation).
+//
+// With `live`, the player is also a widget (Tier 2): sliders rerun the
+// scenario's C++, compiled to WebAssembly, in the reader's browser, and the
+// player then plays that trace instead.
 import { validateTrace } from '../../lib/trace/validate.js';
+import { LIVE } from '../../lib/trace/live.js';
 import { renderPlot, type PlotSpec } from './plot';
+import { renderChecks, renderEvents, renderProvenance } from './parts';
 import type { GhostSpec } from './vehicle-view';
 
 interface Props {
@@ -25,15 +31,21 @@ interface Props {
   view?: boolean;
   /** A second run, drawn translucent beside the first: its position, attitude, and (optional) rotor thrust channels. */
   ghost?: GhostSpec;
+  /** Live scenario name (a key of LIVE in src/lib/trace/live.js): adds parameter sliders. */
+  live?: string;
+  /** For a live widget: what to predict before moving a slider (ANI-8). */
+  prompt?: string;
 }
 
-const { trace, title, description, plots, thrustScale = 0.04, ghost } = Astro.props;
+const { trace, title, description, plots, thrustScale = 0.04, ghost, live, prompt } = Astro.props;
 const errors = validateTrace(trace);
 if (errors.length) {
   throw new Error(`TracePlayer "${title}": invalid reflex-trace/1 trace:\n  ${errors.join('\n  ')}`);
 }
 const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
-const panels = plots.map((spec) => renderPlot(trace, spec));
+const p = trace.provenance;
+const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}`;
+const panels = plots.map((spec, i) => renderPlot(trace, spec, `${id}-${i}`));
 if (ghost) {
   // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
   const need: [string | undefined, number][] = [[ghost.position, 3], [ghost.attitude, 4], [ghost.thrusts, 4]];
@@ -46,13 +58,20 @@ if (ghost) {
     }
   }
 }
-const p = trace.provenance;
-const repo = 'https://github.com/branes-ai/reflex';
-const commitKnown = /^[0-9a-f]{7,40}$/.test(p.commit);
 const duration = trace.t[trace.t.length - 1];
-const fmt = (v: number) => (v === 0 || Math.abs(v) >= 1e-3 && Math.abs(v) < 1e4 ? String(Number(v.toPrecision(4))) : v.toExponential(2));
-const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}`;
-const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
+const liveSpec = live ? (LIVE as Record<string, any>)[live] : undefined;
+if (live && !liveSpec) throw new Error(`TracePlayer "${title}": no live scenario "${live}"`);
+if (liveSpec && !p.scenario.includes(liveSpec.trace.split('/').pop().replace('.json', ''))) {
+  throw new Error(`TracePlayer "${title}": live scenario "${live}" does not match the trace's scenario ${p.scenario}`);
+}
+// Slider values in display units, from the SI defaults.
+const sliderValue = (q: any) => Number((q.default / q.scale).toPrecision(6));
+const config = {
+  thrustScale,
+  panels: panels.map((x) => x.readout),
+  ghost,
+  live: liveSpec && { scenario: live, params: liveSpec.params, plots, key: id, wasm: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}wasm/reflex.mjs` },
+};
 ---
 
 <figure class="trace-player not-content" id={id} aria-labelledby={`${id}-title`} data-trace-player>
@@ -60,6 +79,27 @@ const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
     <span class="tp-title" id={`${id}-title`}>{title}</span>
     <span class="tp-rate" data-rate-badge>1× real time</span>
   </figcaption>
+
+  {liveSpec && (
+    <div class="tp-live" data-live>
+      {prompt && <p class="tp-prompt"><b>Predict, then try it:</b> {prompt}</p>}
+      <div class="tp-sliders">
+        {liveSpec.params.map((q: any, i: number) => (
+          <label class="tp-slider">
+            <span class="tp-slider-label">{q.label}</span>
+            <input type="range" min={q.min} max={q.max} step={q.step} value={sliderValue(q)} data-param={i} />
+            <output data-param-value={i}>{sliderValue(q)} {q.unit}</output>
+          </label>
+        ))}
+      </div>
+      <div class="tp-live-bar">
+        <button type="button" data-live-reset disabled>Back to the recorded run</button>
+        <span class="tp-live-status" data-live-status aria-live="polite">
+          Showing the recorded run. Moving a slider reruns the same C++ in your browser (WebAssembly).
+        </span>
+      </div>
+    </div>
+  )}
 
   <div class={view ? 'tp-stage' : 'tp-stage no-view'}>
     {view && (
@@ -102,7 +142,7 @@ const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
               {panel.dashed && <span class="tp-key tp-muted">dashed: command</span>}
             </span>
           </div>
-          <Fragment set:html={panel.svg} />
+          <div class="tp-svg" data-svg set:html={panel.svg} />
         </div>
       ))}
     </div>
@@ -138,34 +178,9 @@ const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
 
   <p class="tp-desc">{description}</p>
 
-  {trace.events?.length > 0 && (
-    <ol class="tp-events">
-      {trace.events.map((e: any) => (
-        <li><button type="button" data-seek={e.t}>t = {e.t.toFixed(2)} s</button> {e.label}</li>
-      ))}
-    </ol>
-  )}
-
-  {trace.checks?.length > 0 && (
-    <ul class="tp-checks">
-      {trace.checks.map((c: any) => (
-        <li class={c.pass ? 'pass' : 'fail'}>
-          <span class="tp-badge">{c.pass ? '✓ pass' : '✗ fail'}</span>
-          <b>{c.id}</b> {c.metric} = {fmt(c.value)} {c.unit !== '1' && c.unit} ({c.comparison} {fmt(c.limit)}), computed by the scenario harness
-        </li>
-      ))}
-    </ul>
-  )}
-
-  <footer class="tp-prov">
-    <span>Block <code>{p.block}</code></span>
-    <span>Scenario <a href={`${repo}/blob/main/${p.scenario}`}><code>{p.scenario}</code></a></span>
-    <span>Seed {p.seed}</span>
-    <span>dt<sub>sim</sub> {p.dt_sim} s · dt<sub>trace</sub> {p.dt_trace ?? 'non-uniform'} s</span>
-    <span>{p.compiler}</span>
-    <span>Generated at {commitKnown ? <a href={`${repo}/commit/${p.commit}`}><code>{p.commit}</code></a> : <code>{p.commit}</code>}</span>
-    <span>Format <code>{trace.schema}</code>, checked by CI against a fresh run</span>
-  </footer>
+  <div data-events set:html={renderEvents(trace)} />
+  <div data-checks set:html={renderChecks(trace)} />
+  <footer class="tp-prov" data-prov set:html={renderProvenance(trace)} />
 
   <script type="application/json" data-trace set:html={JSON.stringify({ trace, config }).replace(/</g, '\\u003c')} />
 </figure>
@@ -273,6 +288,16 @@ const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
   .trace-player .tp-badge { font-weight: 600; margin-right: 0.35rem; }
   .trace-player .tp-checks .pass .tp-badge { color: var(--tp-good); }
   .trace-player .tp-checks .fail .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-live { border: 1px solid var(--tp-border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+  .trace-player .tp-prompt { color: var(--tp-ink); margin-bottom: 0.5rem; }
+  .trace-player .tp-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.4rem 1rem; }
+  .trace-player .tp-slider { display: grid; grid-template-columns: 1fr auto; gap: 0 0.5rem; align-items: center; color: var(--tp-ink2); }
+  .trace-player .tp-slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--sl-color-accent); }
+  .trace-player .tp-slider output { color: var(--tp-ink); font-variant-numeric: tabular-nums; }
+  .trace-player .tp-live-bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.75rem; margin-top: 0.5rem; }
+  .trace-player .tp-live-bar button:disabled { opacity: 0.5; cursor: default; }
+  .trace-player .tp-live-status { color: var(--tp-ink2); flex: 1 1 16rem; }
+  .trace-player .tp-live-status.error { color: var(--tp-bad); }
   .trace-player .tp-prov { overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 0.1rem 1rem; border-top: 1px solid var(--tp-border); padding-top: 0.5rem;
     color: var(--tp-muted); font-size: 0.75rem; }
   .trace-player .tp-prov a { color: var(--tp-ink2); }

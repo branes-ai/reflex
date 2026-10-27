@@ -1,11 +1,13 @@
 // size-budget.mjs — ANI-12. Lists every counted file with its gzip -9 size and
 // fails over budget:
 //   - each committed trace (src/traces/**.json): ≤ 250 KB;
-//   - each WebAssembly module plus its JavaScript loader (src/wasm/**): ≤ 400 KB;
+//   - each WebAssembly module plus its JavaScript loader, as built into
+//     dist/wasm/ (scripts/build-wasm.sh, copied from public/wasm/): ≤ 400 KB;
 //   - three.js is outside the budget, but may appear only in the built bundles
 //     of pages that use the 3-D view (a [data-vehicle-view] element).
 //
-// Run after `astro build` (it reads dist/ for the three.js rule).
+// Run after `astro build` (it reads dist/). With --require-wasm, a build
+// without a WebAssembly module fails too (CI builds one).
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { dirname, join, relative, resolve, basename } from 'node:path';
@@ -32,11 +34,23 @@ console.log('Traces (gzip -9 each, budget 250 KB):');
 for (const f of list(join(root, 'src/traces'), ['.json'])) row(relative(root, f), gz(f), 250 * KB);
 
 console.log('WebAssembly module + loader (gzip -9 together, budget 400 KB):');
-const wasm = list(join(root, 'src/wasm'), ['.wasm']);
-if (wasm.length === 0) console.log('     (none yet)');
+const wasm = list(join(root, 'dist/wasm'), ['.wasm']);
+if (wasm.length === 0) {
+  if (process.argv.includes('--require-wasm')) {
+    failed = true;
+    console.log('FAIL no module in dist/wasm/: run scripts/build-wasm.sh before the site build');
+  } else {
+    console.log('     (none built: scripts/build-wasm.sh)');
+  }
+}
 for (const f of wasm) {
-  const loader = f.replace(/\.wasm$/, '.js');
-  row(`${relative(root, f)} + ${basename(loader)}`, gz(f) + (existsSync(loader) ? gz(loader) : 0), 400 * KB);
+  const loader = f.replace(/\.wasm$/, '.mjs');
+  if (!existsSync(loader)) {
+    failed = true;
+    console.log(`FAIL ${relative(root, f)} has no loader ${basename(loader)}`);
+    continue;
+  }
+  row(`${relative(root, f)} + ${basename(loader)}`, gz(f) + gz(loader), 400 * KB);
 }
 
 // three.js placement: follow each page's module scripts through their static

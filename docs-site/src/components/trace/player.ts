@@ -1,42 +1,81 @@
 // Client side of TracePlayer: the time base, controls, keyboard, plot cursors
-// and readouts, and the lazily loaded three.js vehicle view.
+// and readouts, the lazily loaded three.js vehicle view, and, for a live
+// widget, the sliders that rerun the scenario in WebAssembly.
 //
 // Rules from the animation standard (docs/standards/animation):
 //   - starts paused, and only a reader action plays it (ANI-10);
 //   - the rate is always on screen (ANI-5);
 //   - sample-and-hold: the cursor sits on a recorded sample, never between
-//     samples, so nothing on screen is computed here (ANI-1).
+//     samples, so nothing on screen is computed here (ANI-1). A live trace
+//     comes from the scenario's own C++, compiled to WebAssembly.
 
 interface Readout {
   items: { channel: string; component: number }[];
   decimals: number;
 }
 
+type Trace = TraceParts & {
+  t: number[];
+  channels: Record<string, (number | number[])[]>;
+  units?: Record<string, string>;
+  vehicle?: { arm_length?: number };
+};
+
+interface LiveParam {
+  label: string;
+  unit: string;
+  scale: number;
+  min: number;
+  max: number;
+  default: number;
+}
+
+interface LiveConfig {
+  scenario: string;
+  params: LiveParam[];
+  plots: PlotSpec[];
+  key: string;
+  wasm: string;
+}
+
 interface Payload {
-  trace: {
-    t: number[];
-    channels: Record<string, (number | number[])[]>;
-    events?: { t: number; label: string }[];
-    vehicle?: { arm_length?: number };
-  };
-  config: { thrustScale: number; panels: Readout[]; ghost?: GhostSpec };
+  trace: Trace;
+  config: { thrustScale: number; panels: Readout[]; ghost?: GhostSpec; live?: LiveConfig };
 }
 
 export interface ViewHandle {
   show(index: number): void;
   setCamera(mode: string): void;
+  setTrace(trace: Trace): void;
 }
 
 import type { GhostSpec } from './vehicle-view';
+import { renderPlot, type PlotSpec } from './plot';
+import { renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
+import { runLive } from '../../lib/trace/live.js';
+
+// One WebAssembly module per page, loaded on the first slider move.
+let modulePromise: Promise<any> | null = null;
+function loadModule(url: string) {
+  modulePromise ??= import(/* @vite-ignore */ url)
+    .then((m) => m.default())
+    .catch((err) => {
+      modulePromise = null;  // let a later slider move try again
+      throw err;
+    });
+  return modulePromise;
+}
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SPEEDS = [0.1, 0.25, 0.5, 1];
 
 function attach(root: HTMLElement) {
   const payload: Payload = JSON.parse(root.querySelector('script[data-trace]')!.textContent!);
-  const { trace, config } = payload;
-  const t = trace.t;
-  const n = t.length;
+  const { config } = payload;
+  const recorded = payload.trace;
+  let trace = recorded;
+  let t = trace.t;
+  let n = t.length;
   const play = root.querySelector<HTMLButtonElement>('[data-play]')!;
   const icon = root.querySelector<SVGPathElement>('[data-play-icon]')!;
   const scrub = root.querySelector<HTMLInputElement>('[data-scrub]')!;
@@ -45,11 +84,17 @@ function attach(root: HTMLElement) {
   const badge = root.querySelector<HTMLElement>('[data-rate-badge]')!;
   const eventBox = root.querySelector<HTMLElement>('[data-event]');
   const panels = [...root.querySelectorAll<HTMLElement>('[data-panel]')].map((el, i) => ({
+    host: el.querySelector<HTMLElement>('[data-svg]')!,
     svg: el.querySelector<SVGSVGElement>('svg')!,
     cursor: el.querySelector<SVGLineElement>('.tp-cursor')!,
     values: [...el.querySelectorAll<HTMLElement>('[data-readout]')],
     readout: config.panels[i],
   }));
+  const parts = {
+    events: root.querySelector<HTMLElement>('[data-events]')!,
+    checks: root.querySelector<HTMLElement>('[data-checks]')!,
+    prov: root.querySelector<HTMLElement>('[data-prov]')!,
+  };
 
   let index = 0;
   let playing = false;
@@ -142,14 +187,16 @@ function attach(root: HTMLElement) {
     seek(Number(scrub.value));
   });
   speed.addEventListener('change', () => setRate(Number(speed.value)));
-  root.querySelectorAll<HTMLButtonElement>('[data-seek]').forEach((b) =>
-    b.addEventListener('click', () => {
-      setPlaying(false);
-      seek(indexAt(Number(b.dataset.seek)));
-    }),
-  );
+  // Event buttons are re-rendered with a live trace, so listen on the list.
+  parts.events.addEventListener('click', (ev) => {
+    const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-seek]');
+    if (!b) return;
+    setPlaying(false);
+    seek(indexAt(Number(b.dataset.seek)));
+  });
 
-  // Scrubbing on any plot.
+  // Scrubbing on any plot. The listeners sit on the panel's SVG host, which
+  // outlives the SVG when a live trace re-renders it.
   for (const p of panels) {
     const toIndex = (ev: PointerEvent) => {
       const ctm = p.svg.getScreenCTM();
@@ -159,14 +206,36 @@ function attach(root: HTMLElement) {
       const x1 = Number(p.svg.dataset.x1);
       return indexAt(t[0] + ((x - x0) / (x1 - x0)) * (t[n - 1] - t[0]));
     };
-    p.svg.addEventListener('pointerdown', (ev) => {
+    p.host.addEventListener('pointerdown', (ev) => {
       setPlaying(false);
-      p.svg.setPointerCapture(ev.pointerId);
+      p.host.setPointerCapture(ev.pointerId);
       seek(toIndex(ev));
     });
-    p.svg.addEventListener('pointermove', (ev) => {
-      if (p.svg.hasPointerCapture(ev.pointerId)) seek(toIndex(ev));
+    p.host.addEventListener('pointermove', (ev) => {
+      if (p.host.hasPointerCapture(ev.pointerId)) seek(toIndex(ev));
     });
+  }
+
+  /** Replaces the trace: plots, events, checks, provenance, and the 3-D view. */
+  function load(next: Trace, live: boolean) {
+    trace = next;
+    t = trace.t;
+    n = t.length;
+    scrub.max = String(n - 1);
+    if (config.live) {
+      panels.forEach((p, i) => {
+        const r = renderPlot(trace, config.live!.plots[i], `${config.live!.key}-${i}`);
+        p.host.innerHTML = r.svg;
+        p.svg = p.host.querySelector('svg')!;
+        p.cursor = p.host.querySelector<SVGLineElement>('.tp-cursor')!;
+        p.readout = r.readout;
+      });
+    }
+    parts.events.innerHTML = renderEvents(trace);
+    parts.checks.innerHTML = renderChecks(trace);
+    parts.prov.innerHTML = renderProvenance(trace, live);
+    view?.setTrace(trace);
+    seek(Math.min(index, n - 1));
   }
 
   // Keyboard, while focus is anywhere in the player. Native controls keep
@@ -204,7 +273,7 @@ function attach(root: HTMLElement) {
         io.disconnect();
         try {
           const { createVehicleView } = await import('./vehicle-view');
-          view = createVehicleView(host, trace, {
+          view = createVehicleView(host, trace as any, {
             thrustScale: config.thrustScale,
             reducedMotion: reducedMotion(),
             ghost: config.ghost,
@@ -233,8 +302,77 @@ function attach(root: HTMLElement) {
     io.observe(host);
   }
 
+  if (config.live) attachLive(root, config.live, recorded, load);
+
   setRate(1);
   render();
+}
+
+/** The sliders of a live widget: each change reruns the scenario in WebAssembly. */
+function attachLive(root: HTMLElement, live: LiveConfig, recorded: Trace, load: (trace: Trace, live: boolean) => void) {
+  const box = root.querySelector<HTMLElement>('[data-live]')!;
+  const sliders = [...box.querySelectorAll<HTMLInputElement>('[data-param]')];
+  const outputs = [...box.querySelectorAll<HTMLOutputElement>('[data-param-value]')];
+  const reset = box.querySelector<HTMLButtonElement>('[data-live-reset]')!;
+  const status = box.querySelector<HTMLElement>('[data-live-status]')!;
+  const display = (q: LiveParam) => Number((q.default / q.scale).toPrecision(6));
+  let pending = false;
+
+  const say = (text: string, error = false) => {
+    status.textContent = text;
+    status.classList.toggle('error', error);
+  };
+  const values = () => sliders.map((s, i) => Number(s.value) * live.params[i].scale);
+  const atDefaults = () => sliders.every((s, i) => Number(s.value) === display(live.params[i]));
+  const describe = () =>
+    sliders.map((s, i) => `${live.params[i].label} = ${s.value} ${live.params[i].unit}`).join(', ');
+
+  async function rerun() {
+    pending = false;
+    sliders.forEach((s, i) => (outputs[i].textContent = `${s.value} ${live.params[i].unit}`));
+    if (atDefaults()) {
+      load(recorded, false);
+      reset.disabled = true;
+      say('Showing the recorded run, at the default parameters.');
+      return;
+    }
+    reset.disabled = false;
+    say('Running…');
+    let module;
+    try {
+      module = await loadModule(live.wasm);
+    } catch (err) {
+      console.warn('TracePlayer: WebAssembly module unavailable', err);
+      say('Live runs are unavailable: this build of the site has no WebAssembly module, or it failed to load. The player shows the recorded run.', true);
+      load(recorded, false);
+      return;
+    }
+    try {
+      const start = performance.now();
+      const trace = runLive(module, live.scenario, values()) as Trace;
+      const ms = performance.now() - start;
+      load(trace, true);
+      const edge = sliders.some((s) => s.value === s.min || s.value === s.max)
+        ? ' This is the end of the range the scenario accepts.'
+        : '';
+      say(`Exploration, not evidence: computed in your browser in ${ms.toFixed(0)} ms, with ${describe()}. CI checks the recorded run, and the text below describes it.${edge}`);
+    } catch (err) {
+      console.error('TracePlayer: live run failed', err);
+      say(`Could not run the scenario here: ${(err as Error).message}. The player shows the last run that succeeded.`, true);
+    }
+  }
+
+  for (const s of sliders) {
+    s.addEventListener('input', () => {
+      if (pending) return;
+      pending = true;
+      requestAnimationFrame(rerun);
+    });
+  }
+  reset.addEventListener('click', () => {
+    sliders.forEach((s, i) => (s.value = String(display(live.params[i]))));
+    rerun();
+  });
 }
 
 export function initPlayers() {

@@ -153,31 +153,44 @@ export function createVehicleView(
   mount.appendChild(renderer.domElement);
   renderer.domElement.setAttribute('aria-hidden', 'true');
 
-  const pos = trace.channels.position as number[][];
-  const att = trace.channels.attitude as number[][];
-  const thrusts = trace.channels.rotor_thrusts as number[][] | undefined;
-  const ghost = opts.ghost
-    ? {
-        pos: trace.channels[opts.ghost.position] as number[][],
-        att: trace.channels[opts.ghost.attitude] as number[][],
-        thrusts: opts.ghost.thrusts ? (trace.channels[opts.ghost.thrusts] as number[][]) : undefined,
-      }
-    : null;
   const arm = trace.vehicle?.arm_length ?? DEFAULT_ARM;
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
   camera.up.set(0, 0, 1);
 
-  // Bounds of the trajectories, for the grid and the overview camera.
+  // The trace's paths and their bounds (for the grid and the overview
+  // camera); replaced by setTrace() when a live widget reruns the scenario.
+  let pos: number[][];
+  let att: number[][];
+  let thrusts: number[][] | undefined;
+  let ghost: { pos: number[][]; att: number[][]; thrusts?: number[][] } | null;
   const box = new THREE.Box3();
-  for (const path of ghost ? [pos, ghost.pos] : [pos]) {
-    path.forEach((p) => box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])));
+  const center = new THREE.Vector3();
+  let extentXY = 1;
+  let extent = 1;
+
+  function use(tr: Trace) {
+    pos = tr.channels.position as number[][];
+    att = tr.channels.attitude as number[][];
+    thrusts = tr.channels.rotor_thrusts as number[][] | undefined;
+    ghost = opts.ghost
+      ? {
+          pos: tr.channels[opts.ghost.position] as number[][],
+          att: tr.channels[opts.ghost.attitude] as number[][],
+          thrusts: opts.ghost.thrusts ? (tr.channels[opts.ghost.thrusts] as number[][]) : undefined,
+        }
+      : null;
+    box.makeEmpty();
+    for (const path of ghost ? [pos, ghost.pos] : [pos]) {
+      path.forEach((p) => box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])));
+    }
+    box.expandByPoint(new THREE.Vector3(box.min.x, box.min.y, 0));
+    box.getCenter(center);
+    extentXY = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+    extent = Math.max(extentXY, box.max.z - box.min.z);
   }
-  box.expandByPoint(new THREE.Vector3(box.min.x, box.min.y, 0));
-  const center = box.getCenter(new THREE.Vector3());
-  const extentXY = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
-  const extent = Math.max(extentXY, box.max.z - box.min.z);
+  use(trace);
 
   let built: THREE.Object3D[] = [];
   let main: ReturnType<typeof glyph>;
@@ -194,7 +207,20 @@ export function createVehicleView(
     );
 
   function build() {
-    built.forEach((o) => scene.remove(o));
+    // Release the old objects' GPU buffers: build() runs on every theme change
+    // and every live rerun, and three.js frees nothing until dispose().
+    built.forEach((o) => {
+      scene.remove(o);
+      o.traverse((c: THREE.Object3D) => {
+        const m = c as THREE.Mesh;
+        m.geometry?.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+        for (const x of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+          (x as THREE.SpriteMaterial).map?.dispose();
+          x.dispose();
+        }
+      });
+    });
     const c = tokens(host);
 
     // Ground grid on z = 0, 0.5 m squares, covering the trajectory.
@@ -286,6 +312,12 @@ export function createVehicleView(
     },
     setCamera(mode: string) {
       cameraMode = mode;
+      draw();
+    },
+    setTrace(next: Trace) {
+      use(next);
+      index = Math.min(index, pos.length - 1);
+      build();
       draw();
     },
   };

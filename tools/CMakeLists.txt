@@ -9,6 +9,14 @@ target_include_directories(reflex_trace INTERFACE
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/trace/include>)
 target_compile_features(reflex_trace INTERFACE cxx_std_20)
 
+# Under Emscripten, tools/ builds only the WebAssembly module of the docs
+# site's live widgets (scripts/build-wasm.sh); the native trace executables
+# are host tools.
+if(EMSCRIPTEN)
+    add_subdirectory(wasm)
+    return()
+endif()
+
 # One executable per scenario source, named trace_<block>_<scenario> (e.g.
 # trace_quadrotor_roll_pulse). Each writes $REFLEX_TRACE_DIR/<block>/<scenario>.json;
 # scripts/gen-traces.sh runs them all. The reflex_traces target builds them.

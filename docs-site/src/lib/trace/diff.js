@@ -2,7 +2,7 @@
 // profile. Normative text: the "Equivalence profiles" section of
 // docs/standards/animation. Reports the first sample and channel that fail.
 
-import { reservedWidth } from './validate.js';
+import { reservedWidth } from './channels.js';
 
 const RTOL = 1e-9;
 const ATOL = 1e-9;

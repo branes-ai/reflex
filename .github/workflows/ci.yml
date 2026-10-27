@@ -145,9 +145,18 @@ jobs:
           cmake --preset clang-release -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF
           scripts/gen-traces.sh clang-release build/traces-clang
           (cd docs-site && npm run traces:check -- --regen ../build/traces-clang)
+      - name: Build the WebAssembly module (pinned emsdk) and compare with native
+        # Tier 2 of docs/standards/animation: the live widgets' scenarios,
+        # compiled to Wasm, must agree with the committed native traces under
+        # the wasm equivalence profile.
+        run: |
+          scripts/install-emsdk.sh "$RUNNER_TEMP/emsdk"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          scripts/build-wasm.sh
+          (cd docs-site && npm run wasm-agree)
       - name: Build docs site
         working-directory: docs-site
         run: npm run build
       - name: Size budget
         working-directory: docs-site
-        run: npm run size-budget
+        run: npm run size-budget -- --require-wasm

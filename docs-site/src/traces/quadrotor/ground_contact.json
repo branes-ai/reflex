@@ -1,7 +1,7 @@
 {
   "schema": "reflex-trace/1",
   "provenance": {
-    "commit": "404bb12-dirty", "block": "model/quadrotor",
+    "commit": "3a630b3-dirty", "block": "model/quadrotor",
     "scenario": "tools/trace/scenarios/quadrotor/ground_contact.cpp", "seed": 0,
     "compiler": "gcc 15.2 optimized", "dt_sim": 0.001, "dt_trace": 0.01
   },

@@ -11,8 +11,10 @@
 // 2⁴ = 16, about 1.2 decades.
 //
 // Check (BB-V2): the smallest observed order p = log2(e(dt) / e(dt/2)) over
-// the four pairs (0 if no pair qualifies), from the position error at the end, fitted only on pairs
-// whose errors are above 1e3 × the roundoff floor (1e-13 m). Pass: p ≥ 3.7.
+// the four pairs, from the position error at the end, fitted only on pairs
+// whose errors are above 1e3 × the roundoff floor: ε × the position scale,
+// about 1e-15 m, so the cutoff is 1e-12 m. All four pairs qualify (the finest
+// error is about 8e-12 m); with none, the check would report 0. Pass: p ≥ 3.7.
 // Writes $REFLEX_TRACE_DIR/quadrotor/dt_convergence.json.
 
 #include "quadrotor_trace.hpp"
@@ -35,7 +37,7 @@ constexpr int kSamples = 65;  // 0 … 0.64 s
 constexpr std::size_t kRuns = 5;
 constexpr int kReferenceSteps = 1024;  // per trace sample
 constexpr double kFloor = 1e-16;
-constexpr double kRoundoff = 1e-13;
+constexpr double kRoundoff = 1e-15;  // ε × the position scale (about 5 m)
 
 int run() {
     model::QuadrotorParams<double> params{};

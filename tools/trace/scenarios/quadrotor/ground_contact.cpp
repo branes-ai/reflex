@@ -12,8 +12,9 @@
 // the V&V plan).
 //
 // Check (BB-T4, property 5 of the V&V plan): while grounded with vertical
-// thrust at or below the weight, the vehicle does not move: the number of
-// such steps that change the position or the attitude, compared exactly, is 0.
+// thrust at or below the weight, the vehicle neither moves nor lifts off: the
+// number of such steps that leave the ground or change the position or the
+// attitude, compared exactly, is 0.
 // Writes $REFLEX_TRACE_DIR/quadrotor/ground_contact.json.
 
 #include "quadrotor_trace.hpp"
@@ -104,9 +105,9 @@ int run() {
         for (int i = 0; i < kStepsPerSample; ++i) {
             const qt::State before = x;
             x = quad.step(x, command(n + i, hover), kDtSim);
-            if (before.on_ground && x.on_ground && vertical_thrust(before) <= weight) {
+            if (before.on_ground && vertical_thrust(before) <= weight) {
                 const auto& a = before;
-                const bool moved = x.position(0) != a.position(0) || x.position(1) != a.position(1) ||
+                const bool moved = !x.on_ground || x.position(0) != a.position(0) || x.position(1) != a.position(1) ||
                                    x.position(2) != a.position(2) || x.attitude.w != a.attitude.w ||
                                    x.attitude.x != a.attitude.x || x.attitude.y != a.attitude.y ||
                                    x.attitude.z != a.attitude.z;

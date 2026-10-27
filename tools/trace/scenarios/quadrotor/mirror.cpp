@@ -66,8 +66,8 @@ qt::Command reflect(const qt::Command& u) {
     return v;
 }
 
-/// The state as one flat vector, for the comparison.
-std::array<double, 17> flat(const qt::State& x) {
+/// The state as one flat vector, for the comparison (on_ground aside: both runs stay airborne).
+std::array<double, 18> flat(const qt::State& x) {
     return {x.position(0),
             x.position(1),
             x.position(2),
@@ -129,8 +129,8 @@ int run() {
     tr.channel("mirror_rotor_thrusts", 4, "N");
 
     // Run both, keeping every step for the comparison.
-    std::array<double, 17> scale{};
-    std::array<double, 17> diff{};
+    std::array<double, 18> scale{};
+    std::array<double, 18> diff{};
     const auto compare = [&](const qt::State& a, const qt::State& b) {
         const auto fa = flat(reflect(a));
         const auto fb = flat(b);

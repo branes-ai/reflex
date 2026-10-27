@@ -35,8 +35,15 @@ if (errors.length) {
 const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
 const panels = plots.map((spec) => renderPlot(trace, spec));
 if (ghost) {
-  for (const name of [ghost.position, ghost.attitude, ghost.thrusts].filter(Boolean)) {
-    if (!(name! in trace.channels)) throw new Error(`TracePlayer "${title}": no ghost channel "${name}"`);
+  // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
+  const need: [string | undefined, number][] = [[ghost.position, 3], [ghost.attitude, 4], [ghost.thrusts, 4]];
+  for (const [name, width] of need) {
+    if (!name) continue;
+    const ch = trace.channels[name];
+    if (!ch) throw new Error(`TracePlayer "${title}": no ghost channel "${name}"`);
+    if (!Array.isArray(ch[0]) || ch[0].length !== width) {
+      throw new Error(`TracePlayer "${title}": ghost channel "${name}" must have ${width} components`);
+    }
   }
 }
 const p = trace.provenance;

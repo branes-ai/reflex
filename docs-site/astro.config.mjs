@@ -84,8 +84,16 @@ export default defineConfig({
         {
           label: 'Model',
           items: [
-            { label: 'Quadrotor Model', slug: 'model/quadrotor' },
-            { label: 'Quadrotor V&V Plan', slug: 'model/quadrotor-vv' },
+            // One group per block, with its four pages (docs/standards/animation).
+            {
+              label: 'Quadrotor',
+              items: [
+                { label: 'Explainer', slug: 'model/quadrotor-explainer' },
+                { label: 'Developer Guide', slug: 'model/quadrotor' },
+                { label: 'V&V Plan', slug: 'model/quadrotor-vv' },
+                { label: 'Deployment Guide', slug: 'model/quadrotor-deployment' },
+              ],
+            },
           ],
         },
         {

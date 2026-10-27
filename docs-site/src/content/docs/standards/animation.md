@@ -312,8 +312,12 @@ on.
 
 **Status.** P0 is done: the [Trace Player](/standards/trace-player/) page plays
 its test trace, and the `Docs traces` CI job runs the staleness and size
-checks. The decisions taken are three.js for the 3-D view, and the current
-sidebar, so the per-block page grouping above waits for P1.
+checks. P1 is built and awaits its review: the quadrotor model has its four
+pages, the [explainer](/model/quadrotor-explainer/),
+[developer guide](/model/quadrotor/), [V&V plan](/model/quadrotor-vv/#animations),
+and [deployment guide](/model/quadrotor-deployment/), with ten animations from
+scenarios in `tools/trace/scenarios/quadrotor/`. The exit review, by one
+newcomer and one integrator, is still open.
 
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method
@@ -324,14 +328,19 @@ need it.
 
 ## Decisions
 
-Taken for P0:
+Taken:
 
 - **three.js on the docs site.** Taken: the 3-D view uses three.js. It
   loads as a separate chunk (about 120 KB gzipped, view code included) only
   on pages with a 3-D view, and only when the player scrolls near the
   viewport. The size-budget check enforces the placement.
-- **Sidebar.** Taken: keep the current sidebar for now. The per-block
-  grouping, which moves URLs and needs redirects, is revisited with P1.
+- **Sidebar.** Taken in P1: each block gets a sidebar group with its four
+  pages (Model › Quadrotor › Explainer, Developer Guide, V&V Plan,
+  Deployment Guide). The pages keep their URLs (`model/quadrotor`,
+  `model/quadrotor-vv`) and the new ones sit beside them
+  (`model/quadrotor-explainer`, `model/quadrotor-deployment`), so nothing
+  moves and no redirects are needed. The datasheet joins the V&V page when
+  WS5 produces it.
 
 Still open:
 

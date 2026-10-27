@@ -1,13 +1,21 @@
 ---
 title: Quadrotor Model
-description: branes::reflex::model::QuadrotorModel — rigid-body quadrotor dynamics for SITL and MPC.
+description: Developer guide for branes::reflex::model::QuadrotorModel, the rigid-body quadrotor dynamics for SITL and MPC.
 ---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import invariantViolation from '../../../traces/quadrotor/invariant_violation.json';
 
 `#include <branes/reflex/model/quadrotor.hpp>`
 
 **Grade: C** (specified and unit-tested) under the
 [building block standard](/standards/building-blocks/). The
 [V&V plan](/model/quadrotor-vv/) covers the path to A+.
+
+This is the developer guide: the equations, conventions, contracts, and
+API. The [explainer](/model/quadrotor-explainer/) builds the physics up one
+idea at a time, and the [deployment guide](/model/quadrotor-deployment/)
+covers integrating the model into a simulator.
 
 `branes::reflex::model::QuadrotorModel<T>` is the quadrotor model behind
 software-in-the-loop simulation and, later, the model-predictive controllers.
@@ -66,10 +74,48 @@ speeds between 10 % and 95 % of ω_max. Outside it the model is unvalidated.
 and `invariant_id()` names it. `quadrotor_state_valid(x)` is the same check
 as a bool.
 
+### Finding a violation
+
+`step()` keeps I2–I5, but only from a valid state: a valid state is its
+precondition, and a Debug build asserts it. A violation therefore almost
+always comes from the caller, which wrote the state between steps. Check
+the state with `quadrotor_state_violation()` before each `step()` while
+debugging, and stop at the first violation, before the model steps an
+invalid state. The invariant monitor planned in the
+[V&V plan](/model/quadrotor-vv/#ws6-debug-harness-d1d3) (BB-D2) does the
+same and also writes a repro file.
+
+<TracePlayer
+  trace={invariantViolation}
+  title="Where does an invalid state come from?"
+  description="The model is correct; the caller has a bug. The vehicle hovers at 0.3 m and sinks slowly on a command 3 % below the hover speed. Every 0.1 s, the caller applies an altimeter correction of −2 cm to the state's height. It was meant to be applied once. Each correction moves the state down 2 cm in one step, so the height falls in a staircase and the vehicle touches down at 0.76 s, sooner than it would. At 0.8 s the next correction puts the grounded state 2 cm below the ground. The check before the next step reports I5 (below_ground), with the step index and the field, and the run stops there without calling step()."
+  plots={[
+    { channel: 'height_above_ground', title: 'Height above ground', labels: ['z − ground_z'] },
+    { channel: 'velocity', title: 'Vertical velocity', components: [2], labels: ['v_z'] },
+    { channel: 'on_ground', title: 'On the ground', labels: ['on_ground'] },
+  ]}
+/>
+
+The pattern to look for is a state that changes between two steps by more
+than the dynamics allow. Here the height drops 2 cm in one step while the
+vertical velocity barely changes. The model did not produce that jump, so
+the bug is in the code that touched the state in between.
+
+```cpp
+for (int n = 0; n < steps; ++n) {
+    apply_corrections(x);  // caller code: the suspect
+    if (const auto v = m.quadrotor_state_violation(x); v != model::StateViolation::none) {
+        std::fprintf(stderr, "%s before step %d\n", model::invariant_id(v), n);
+        break;  // stop before step(): its precondition no longer holds
+    }
+    x = m.step(x, u, dt);
+}
+```
+
 ## Scalar types
 
 The I2 tolerance scales with the scalar type's epsilon, so I2–I5 hold at any
-precision. The tests run them in double, float, posit<16,1>, and bfloat16.
+precision. The tests run them in double, float, `posit<16,1>`, and bfloat16.
 Every parameter must be a normal number of the type: IEEE binary16 cannot
 represent RP-1's k_f = 8.9e-7, so `quadrotor_params_valid()` rejects it.
 How accurate the model is at reduced precision is a characterization result,

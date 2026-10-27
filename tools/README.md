@@ -16,7 +16,9 @@ the docs site (see the *Trace Player* page under Standards).
   recorded.
 - `trace/scenarios/<block>/<scenario>.cpp`: one executable each, built as
   `trace_<block>_<scenario>` (target `reflex_traces` builds all of them). Each
-  writes `$REFLEX_TRACE_DIR/<block>/<scenario>.json`.
+  writes `$REFLEX_TRACE_DIR/<block>/<scenario>.json`. Headers next to the
+  scenarios hold shared recording code (for example
+  `quadrotor/quadrotor_trace.hpp`) and are not built on their own.
 
 Regenerate the committed docs traces after a model change:
 

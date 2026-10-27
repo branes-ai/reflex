@@ -43,6 +43,10 @@
 #include <system_error>
 #include <vector>
 
+#if defined(__EMSCRIPTEN__)
+#include <emscripten/version.h>
+#endif
+
 namespace branes::reflex::trace {
 
 inline constexpr std::string_view kSchema = "reflex-trace/1";
@@ -154,7 +158,10 @@ struct Check {
 /// The compiler and optimization level, from the predefined macros.
 [[nodiscard]] inline std::string compiler_id() {
     std::string id;
-#if defined(__clang__)
+#if defined(__EMSCRIPTEN__)
+    id = "emscripten " + std::to_string(__EMSCRIPTEN_MAJOR__) + "." + std::to_string(__EMSCRIPTEN_MINOR__) + "." +
+         std::to_string(__EMSCRIPTEN_TINY__) + " wasm32";
+#elif defined(__clang__)
     id = "clang " + std::to_string(__clang_major__) + "." + std::to_string(__clang_minor__);
 #elif defined(__GNUC__)
     id = "gcc " + std::to_string(__GNUC__) + "." + std::to_string(__GNUC_MINOR__);

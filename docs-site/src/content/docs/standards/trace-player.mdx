@@ -76,6 +76,8 @@ import rollPulse from '../../../traces/quadrotor/roll_pulse.json';
 | `thrustScale` | Thrust-arrow length in m per N, shown on screen (default 0.04) |
 | `view` | `false` hides the 3-D view, for a trace where the vehicle barely moves |
 | `ghost` | A second run drawn translucent beside the first: `{ position, attitude, thrusts?, label }` name its channels |
+| `live` | Makes the player a live widget: the name of a scenario in `src/lib/trace/live.js` ([live widgets](#live-widgets)) |
+| `prompt` | For a live widget: what to predict before moving a slider (ANI-8) |
 
 Each entry of `plots` takes:
 
@@ -99,10 +101,40 @@ The `Docs traces` job in `ci.yml` runs on every pull request:
 | Staleness (ANI-3) | `scripts/gen-traces.sh` into `build/traces`, then `check.mjs --regen` | A regenerated trace is not equivalent to the committed one under the `regen` profile, or a scenario's trace is missing from either side |
 | Trace diff (BB-D3) | `npm run trace-diff -- <candidate> <reference> [--profile regen\|wasm]` | (used by the staleness check; also a local tool) It reports the first channel and sample that differ |
 | Docs build | `npm run build` | A page passes an invalid trace to `TracePlayer` |
-| Size budget (ANI-12) | `npm run size-budget` | A trace is over 250 KB gzipped, a Wasm module with its loader is over 400 KB, or a page without a 3-D view loads three.js |
+| Wasm agreement (Tier 2) | `scripts/build-wasm.sh` with the pinned emsdk, then `npm run wasm-agree` | A live scenario fails in the WebAssembly module, or its trace at the default parameters is not equivalent to the committed native trace under the `wasm` profile |
+| Size budget (ANI-12) | `npm run size-budget -- --require-wasm` | A trace is over 250 KB gzipped, the Wasm module with its loader is over 400 KB or missing, or a page without a 3-D view loads three.js |
 
 A model change that alters a trace therefore fails CI until the trace is
 regenerated and committed in the same pull request.
+
+## Live widgets
+
+A live widget is a player with sliders. Each slider move reruns the
+scenario's C++, compiled to WebAssembly, in the reader's browser, and the
+player then plays the new trace: plots, 3-D view, events, and checks. The
+footer names the Emscripten build, and the status line labels the run
+"exploration, not evidence", because only the recorded run is checked by CI.
+
+To make a scenario live:
+
+1. **Parameterize it.** Move the scenario's body into
+   `tools/trace/scenarios/<block>/<scenario>.hpp`, as a function of a
+   `Params` struct that rejects values outside the slider ranges (ANI-9).
+   The `.cpp` calls it with the defaults, so the committed trace is the
+   default run.
+2. **Export it.** Add a case to `reflex_run()` in
+   `tools/wasm/reflex_wasm.cpp`. The C ABI takes up to three parameters.
+3. **Register it.** Add an entry to `LIVE` in `src/lib/trace/live.js`: the
+   committed trace, and for each parameter a label, display unit, scale to
+   SI, range, step, and default. CI's `npm run wasm-agree` then runs it at
+   the defaults and compares it with the committed trace.
+4. **Use it.** Pass `live="<scenario>"` and a `prompt` to the
+   `TracePlayer`.
+
+The module loads only when a reader first moves a slider. A site built
+without it, as in a local build with no emsdk, still plays the recorded
+traces, and the sliders report that live runs are unavailable.
+`tools/README.md` has the build commands.
 
 ## Player behaviour
 

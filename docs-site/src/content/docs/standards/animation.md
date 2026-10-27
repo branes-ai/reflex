@@ -137,7 +137,7 @@ Model
 | Tier | Mechanism | Used for | Evidence? |
 |---|---|---|---|
 | **Trace playback** | A committed trace (JSON) played by a `TracePlayer` component: a 3-D vehicle view synchronized with SVG plots and a shared time cursor | V&V, deployment, and developer pages | It shows evidence, as a view of a CI-checked trace |
-| **Live in the browser** | The block's headers compiled to WebAssembly with Emscripten; the page steps the real model and controller as the reader moves sliders | Explainers | No: interactive, labelled "exploration, not evidence". CI checks that Wasm and native traces agree on a reference scenario under the `wasm` [equivalence profile](#equivalence-profiles) |
+| **Live in the browser** | The block's headers compiled to WebAssembly with Emscripten; the page reruns the scenario's C++ as the reader moves sliders, and plays the new trace | Explainers | No: interactive, labelled "exploration, not evidence". CI checks that Wasm and native traces agree at the default parameters of every live scenario under the `wasm` [equivalence profile](#equivalence-profiles) |
 | **Development viewer** | MCAP traces from the scenario runner (BB-D1), opened in Foxglove or Rerun | Local debugging of any scenario | No: a tool, not a page |
 
 Why not video: video can't follow the site theme, can't be scrubbed against
@@ -312,12 +312,17 @@ on.
 
 **Status.** P0 is done: the [Trace Player](/standards/trace-player/) page plays
 its test trace, and the `Docs traces` CI job runs the staleness and size
-checks. P1 is built and awaits its review: the quadrotor model has its four
+checks. P1 is done: the quadrotor model has its four
 pages, the [explainer](/model/quadrotor-explainer/),
 [developer guide](/model/quadrotor/), [V&V plan](/model/quadrotor-vv/#animations),
 and [deployment guide](/model/quadrotor-deployment/), with ten animations from
 scenarios in `tools/trace/scenarios/quadrotor/`. The exit review, by one
-newcomer and one integrator, is still open.
+newcomer and one integrator, found them clear (2026-10-26), so the method
+continues to P2. P2 is built: three live widgets, two on the
+[quadrotor explainer](/model/quadrotor-explainer/) (τ, and the three
+moments of inertia) and one on the [cascade page](/control/cascade/#try-the-gains)
+(attitude and rate gains), run their scenarios' C++ in the browser. CI
+checks each against its native trace.
 
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method
@@ -334,6 +339,11 @@ Taken:
   loads as a separate chunk (about 120 KB gzipped, view code included) only
   on pages with a 3-D view, and only when the player scrolls near the
   viewport. The size-budget check enforces the placement.
+- **Emscripten in CI.** Taken in P2: a pinned emsdk on the docs
+  workflows. The `Docs traces` job and the deploy workflow each install the
+  release named in `scripts/emsdk-version` and build the module from source
+  with `scripts/build-wasm.sh`. No binary is committed and no artifact passes
+  between workflows, so the module always matches the commit it ships with.
 - **Sidebar.** Taken in P1: each block gets a sidebar group with its four
   pages (Model › Quadrotor › Explainer, Developer Guide, V&V Plan,
   Deployment Guide). The pages keep their URLs (`model/quadrotor`,
@@ -344,9 +354,7 @@ Taken:
 
 Still open:
 
-1. **Emscripten in CI** for P2: a pinned emsdk on the docs workflow, or a
-   separate job that publishes the Wasm module as a build artifact.
-2. **BB-R5** (deployment guide) added to the building block standard for
+1. **BB-R5** (deployment guide) added to the building block standard for
    grade A.
-3. **Where the shared player lives** for P5: in reflex's docs-site, or a
+2. **Where the shared player lives** for P5: in reflex's docs-site, or a
    small separate package that reflex and racing-drone both depend on.

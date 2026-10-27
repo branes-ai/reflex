@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/branes-ai/reflex/compare/v0.5.0...v0.5.1) (2026-10-27)
+
+
+### Documentation
+
+* **model:** quadrotor block pages and animations (animation plan p1) ([#39](https://github.com/branes-ai/reflex/issues/39)) ([3a630b3](https://github.com/branes-ai/reflex/commit/3a630b3f3e0e09e879a0e7d3d6cd0e75807cf833))
+
 ## [0.5.0](https://github.com/branes-ai/reflex/compare/v0.4.1...v0.5.0) (2026-10-26)
 
 

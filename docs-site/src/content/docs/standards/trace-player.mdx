@@ -65,6 +65,30 @@ import rollPulse from '../../../traces/quadrotor/roll_pulse.json';
   plots={[{ channel: 'rotor_speeds', title: 'Rotor speeds', setpoint: true }]} />
 ```
 
+## Component options
+
+| Prop | Meaning |
+|---|---|
+| `trace` | The imported trace JSON |
+| `title` | The one question the animation answers (ANI-7) |
+| `description` | What happens, in text (ANI-10); for a V&V animation, also the pass criterion (ANI-4) |
+| `plots` | The plot panels, top to bottom (below) |
+| `thrustScale` | Thrust-arrow length in m per N, shown on screen (default 0.04) |
+| `view` | `false` hides the 3-D view, for a trace where the vehicle barely moves |
+| `ghost` | A second run drawn translucent beside the first: `{ position, attitude, thrusts?, label }` name its channels |
+
+Each entry of `plots` takes:
+
+| Field | Meaning |
+|---|---|
+| `channel`, `title` | The channel to plot, and the panel title; the unit is appended |
+| `components`, `labels`, `colors` | Which components of a vector channel, their legend labels, and their colour slots (1–4) |
+| `setpoint` | Overlay `<channel>_setpoint`, dashed in the same colours |
+| `series` | More lines from other channels in the same unit: `{ channel, component?, label, color?, dashed? }`, for a limit, a reference, or a second run |
+| `yRange` | A fixed y-axis range `[lo, hi]` to zoom in on part of a signal; lines are clipped to it, and the axis ticks show the range |
+
+The [quadrotor model pages](/model/quadrotor-explainer/) use each of these.
+
 ## What CI checks
 
 The `Docs traces` job in `ci.yml` runs on every pull request:

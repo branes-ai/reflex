@@ -1,7 +1,9 @@
 // VehicleView: the three.js scene of TracePlayer. World axes and a ground grid
 // (z up), a PX4 Quad X glyph with rotor indices and spin arrows, per-rotor
-// thrust arrows to a stated scale, body axes, and the trail so far. It shows
-// recorded samples only; it renders on demand, not in a loop.
+// thrust arrows to a stated scale, body axes, and the trail so far. An
+// optional ghost draws a second recorded run (for example a mirrored one)
+// beside the first, translucent. It shows recorded samples only; it renders
+// on demand, not in a loop.
 
 import * as THREE from 'three';
 import type { ViewHandle } from './player';
@@ -76,10 +78,69 @@ function spinArrow(radius: number, ccw: boolean, color: THREE.Color) {
   return group;
 }
 
+/** Channels of a second run drawn as a translucent ghost. */
+export interface GhostSpec {
+  position: string;
+  attitude: string;
+  thrusts?: string;
+  label: string;
+}
+
+/** The Quad X glyph in the body frame, with its thrust arrows. */
+function glyph(arm: number, c: ReturnType<typeof tokens>, opacity: number) {
+  const a = arm / Math.SQRT2;
+  const body = new THREE.Group();
+  const arrows: THREE.ArrowHelper[] = [];
+  const material = (color: THREE.Color, extra: THREE.MeshBasicMaterialParameters = {}) =>
+    new THREE.MeshBasicMaterial({ color, ...extra });
+  const armMat = material(c.ink2);
+  for (const [i, j] of [[0, 1], [2, 3]]) {
+    const p = new THREE.Vector3(ROTOR_SIGNS[i][0] * a, ROTOR_SIGNS[i][1] * a, 0);
+    const q = new THREE.Vector3(ROTOR_SIGNS[j][0] * a, ROTOR_SIGNS[j][1] * a, 0);
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(p.distanceTo(q), arm * 0.06, arm * 0.04), armMat);
+    beam.position.copy(p).add(q).multiplyScalar(0.5);
+    beam.rotation.z = Math.atan2(q.y - p.y, q.x - p.x);
+    body.add(beam);
+  }
+  // Nose marker on +x: the forward direction.
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(arm * 0.12, arm * 0.35, 12), material(c.x));
+  nose.rotation.z = -Math.PI / 2;
+  nose.position.set(a * 0.9, 0, 0);
+  body.add(nose);
+  ROTOR_SIGNS.forEach(([sx, sy], i) => {
+    const r = new THREE.Vector3(sx * a, sy * a, 0);
+    const color = c.series[i];
+    const disc = new THREE.Mesh(new THREE.RingGeometry(arm * 0.36, arm * 0.42, 40), material(color, { side: THREE.DoubleSide }));
+    disc.position.copy(r);
+    body.add(disc);
+    const spin = spinArrow(arm * 0.26, ROTOR_CCW[i], color);
+    spin.position.copy(r).add(new THREE.Vector3(0, 0, arm * 0.02));
+    body.add(spin);
+    const label = textSprite(String(i), c.ink, arm * 0.5);
+    label.position.copy(r).add(new THREE.Vector3(0, 0, -arm * 0.3));
+    body.add(label);
+    const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), r, 0.1, color, arm * 0.2, arm * 0.12);
+    arrows.push(arrow);
+    body.add(arrow);
+  });
+  body.add(axes(arm * 1.4, c, false));
+  // A ghost: every material of the glyph, sprites and arrows included.
+  if (opacity < 1) {
+    body.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.Material | undefined;
+      if (m) {
+        m.transparent = true;
+        m.opacity = opacity;
+      }
+    });
+  }
+  return { body, arrows };
+}
+
 export function createVehicleView(
   host: HTMLElement,
   trace: Trace,
-  opts: { thrustScale: number; reducedMotion: boolean },
+  opts: { thrustScale: number; reducedMotion: boolean; ghost?: GhostSpec },
 ): ViewHandle | null {
   const mount = host.querySelector<HTMLElement>('[data-canvas]')!;
   let renderer: THREE.WebGLRenderer;
@@ -95,81 +156,63 @@ export function createVehicleView(
   const pos = trace.channels.position as number[][];
   const att = trace.channels.attitude as number[][];
   const thrusts = trace.channels.rotor_thrusts as number[][] | undefined;
+  const ghost = opts.ghost
+    ? {
+        pos: trace.channels[opts.ghost.position] as number[][],
+        att: trace.channels[opts.ghost.attitude] as number[][],
+        thrusts: opts.ghost.thrusts ? (trace.channels[opts.ghost.thrusts] as number[][]) : undefined,
+      }
+    : null;
   const arm = trace.vehicle?.arm_length ?? DEFAULT_ARM;
-  const a = arm / Math.SQRT2;
 
   const scene = new THREE.Scene();
-  const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 100);
+  const camera = new THREE.PerspectiveCamera(40, 1, 0.01, 1000);
   camera.up.set(0, 0, 1);
 
-  // Bounds of the trajectory, for the grid and the overview camera.
+  // Bounds of the trajectories, for the grid and the overview camera.
   const box = new THREE.Box3();
-  pos.forEach((p) => box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])));
+  for (const path of ghost ? [pos, ghost.pos] : [pos]) {
+    path.forEach((p) => box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])));
+  }
   box.expandByPoint(new THREE.Vector3(box.min.x, box.min.y, 0));
   const center = box.getCenter(new THREE.Vector3());
-  const extent = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+  const extentXY = Math.max(box.max.x - box.min.x, box.max.y - box.min.y, 1);
+  const extent = Math.max(extentXY, box.max.z - box.min.z);
 
   let built: THREE.Object3D[] = [];
-  const body = new THREE.Group();
-  const thrustArrows: THREE.ArrowHelper[] = [];
+  let main: ReturnType<typeof glyph>;
+  let shadow: ReturnType<typeof glyph> | null = null;
   let trail: THREE.Line;
+  let ghostTrail: THREE.Line | null = null;
   let cameraMode = 'chase';
   let index = 0;
 
+  const line = (path: number[][], color: THREE.Color, opacity: number) =>
+    new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(path.map((p) => new THREE.Vector3(p[0], p[1], p[2]))),
+      new THREE.LineBasicMaterial({ color, transparent: opacity < 1, opacity }),
+    );
+
   function build() {
     built.forEach((o) => scene.remove(o));
-    body.clear();
-    thrustArrows.length = 0;
     const c = tokens(host);
 
     // Ground grid on z = 0, 0.5 m squares, covering the trajectory.
-    const size = Math.ceil((extent + 2) / 1) * 1;
+    const size = Math.ceil(extentXY + 2);
     const grid = new THREE.GridHelper(size, size * 2, c.axis, c.grid);
     grid.rotation.x = Math.PI / 2;
     grid.position.set(Math.round(center.x * 2) / 2, Math.round(center.y * 2) / 2, 0);
     const world = axes(0.3, c, true);
 
-    // Quad X glyph in the body frame.
-    const armMat = new THREE.MeshBasicMaterial({ color: c.ink2 });
-    for (const [i, j] of [[0, 1], [2, 3]]) {
-      const p = new THREE.Vector3(ROTOR_SIGNS[i][0] * a, ROTOR_SIGNS[i][1] * a, 0);
-      const q = new THREE.Vector3(ROTOR_SIGNS[j][0] * a, ROTOR_SIGNS[j][1] * a, 0);
-      const beam = new THREE.Mesh(new THREE.BoxGeometry(p.distanceTo(q), arm * 0.06, arm * 0.04), armMat);
-      beam.position.copy(p).add(q).multiplyScalar(0.5);
-      beam.rotation.z = Math.atan2(q.y - p.y, q.x - p.x);
-      body.add(beam);
-    }
-    // Nose marker on +x: the forward direction.
-    const nose = new THREE.Mesh(new THREE.ConeGeometry(arm * 0.12, arm * 0.35, 12), new THREE.MeshBasicMaterial({ color: c.x }));
-    nose.rotation.z = -Math.PI / 2;
-    nose.position.set(a * 0.9, 0, 0);
-    body.add(nose);
-    ROTOR_SIGNS.forEach(([sx, sy], i) => {
-      const r = new THREE.Vector3(sx * a, sy * a, 0);
-      const color = c.series[i];
-      const disc = new THREE.Mesh(
-        new THREE.RingGeometry(arm * 0.36, arm * 0.42, 40),
-        new THREE.MeshBasicMaterial({ color, side: THREE.DoubleSide }),
-      );
-      disc.position.copy(r);
-      body.add(disc);
-      const spin = spinArrow(arm * 0.26, ROTOR_CCW[i], color);
-      spin.position.copy(r).add(new THREE.Vector3(0, 0, arm * 0.02));
-      body.add(spin);
-      const label = textSprite(String(i), c.ink, arm * 0.5);
-      label.position.copy(r).add(new THREE.Vector3(0, 0, -arm * 0.3));
-      body.add(label);
-      const arrow = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), r, 0.1, color, arm * 0.2, arm * 0.12);
-      thrustArrows.push(arrow);
-      body.add(arrow);
-    });
-    body.add(axes(arm * 1.4, c, false));
-
+    main = glyph(arm, c, 1);
     // Trail: the whole path, drawn up to the current sample.
-    const geometry = new THREE.BufferGeometry().setFromPoints(pos.map((p) => new THREE.Vector3(p[0], p[1], p[2])));
-    trail = new THREE.Line(geometry, new THREE.LineBasicMaterial({ color: c.ink2 }));
-
-    built = [grid, world, body, trail];
+    trail = line(pos, c.ink2, 1);
+    built = [grid, world, main.body, trail];
+    if (ghost) {
+      shadow = glyph(arm, c, 0.4);
+      ghostTrail = line(ghost.pos, c.ink2, 0.4);
+      built.push(shadow.body, ghostTrail);
+    }
     built.forEach((o) => scene.add(o));
   }
 
@@ -182,24 +225,37 @@ export function createVehicleView(
     camera.updateProjectionMatrix();
   }
 
+  function place(g: ReturnType<typeof glyph>, p: number[], q: number[], f: number[] | undefined) {
+    g.body.position.set(p[0], p[1], p[2]);
+    g.body.quaternion.set(q[1], q[2], q[3], q[0]);  // trace is [w, x, y, z]; three is (x, y, z, w)
+    g.arrows.forEach((arrow, i) => {
+      const thrust = f ? f[i] : 0;
+      arrow.visible = thrust > 0;
+      if (thrust > 0) arrow.setLength(thrust * opts.thrustScale, arm * 0.2, arm * 0.12);
+    });
+  }
+
   function draw() {
     const p = pos[index];
-    const q = att[index];
-    body.position.set(p[0], p[1], p[2]);
-    body.quaternion.set(q[1], q[2], q[3], q[0]);  // trace is [w, x, y, z]; three is (x, y, z, w)
-    thrustArrows.forEach((arrow, i) => {
-      const f = thrusts ? thrusts[index][i] : 0;
-      arrow.visible = f > 0;
-      if (f > 0) arrow.setLength(f * opts.thrustScale, arm * 0.2, arm * 0.12);
-    });
+    place(main, p, att[index], thrusts?.[index]);
     trail.geometry.setDrawRange(0, index + 1);
-
     const target = new THREE.Vector3(p[0], p[1], p[2]);
+    let reach = 1;
+    if (ghost && shadow && ghostTrail) {
+      const g = ghost.pos[index];
+      place(shadow, g, ghost.att[index], ghost.thrusts?.[index]);
+      ghostTrail.geometry.setDrawRange(0, index + 1);
+      // Follow the midpoint, far enough back to keep both vehicles in view.
+      const other = new THREE.Vector3(g[0], g[1], g[2]);
+      reach = Math.max(1, 1.2 * target.distanceTo(other));
+      target.add(other).multiplyScalar(0.5);
+    }
+
     if (cameraMode === 'chase') {
-      camera.position.copy(target).add(new THREE.Vector3(-0.55, -0.75, 0.45));
+      camera.position.copy(target).add(new THREE.Vector3(-0.55, -0.75, 0.45).multiplyScalar(reach));
       camera.lookAt(target);
     } else if (cameraMode === 'behind') {
-      camera.position.copy(target).add(new THREE.Vector3(-0.95, 0, 0.18));
+      camera.position.copy(target).add(new THREE.Vector3(-0.95, 0, 0.18).multiplyScalar(reach));
       camera.lookAt(target);
     } else {
       const d = extent * 1.1 + 1;

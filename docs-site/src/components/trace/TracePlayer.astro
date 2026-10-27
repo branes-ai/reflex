@@ -9,6 +9,7 @@
 // each sample as recorded (sample-and-hold, no interpolation).
 import { validateTrace } from '../../lib/trace/validate.js';
 import { renderPlot, type PlotSpec } from './plot';
+import type { GhostSpec } from './vehicle-view';
 
 interface Props {
   /** The trace, imported from src/traces/. */
@@ -22,22 +23,36 @@ interface Props {
   thrustScale?: number;
   /** Show the 3-D vehicle view (needs position and attitude). */
   view?: boolean;
+  /** A second run, drawn translucent beside the first: its position, attitude, and (optional) rotor thrust channels. */
+  ghost?: GhostSpec;
 }
 
-const { trace, title, description, plots, thrustScale = 0.04 } = Astro.props;
+const { trace, title, description, plots, thrustScale = 0.04, ghost } = Astro.props;
 const errors = validateTrace(trace);
 if (errors.length) {
   throw new Error(`TracePlayer "${title}": invalid reflex-trace/1 trace:\n  ${errors.join('\n  ')}`);
 }
 const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
 const panels = plots.map((spec) => renderPlot(trace, spec));
+if (ghost) {
+  // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
+  const need: [string | undefined, number][] = [[ghost.position, 3], [ghost.attitude, 4], [ghost.thrusts, 4]];
+  for (const [name, width] of need) {
+    if (!name) continue;
+    const ch = trace.channels[name];
+    if (!ch) throw new Error(`TracePlayer "${title}": no ghost channel "${name}"`);
+    if (!Array.isArray(ch[0]) || ch[0].length !== width) {
+      throw new Error(`TracePlayer "${title}": ghost channel "${name}" must have ${width} components`);
+    }
+  }
+}
 const p = trace.provenance;
 const repo = 'https://github.com/branes-ai/reflex';
 const commitKnown = /^[0-9a-f]{7,40}$/.test(p.commit);
 const duration = trace.t[trace.t.length - 1];
 const fmt = (v: number) => (v === 0 || Math.abs(v) >= 1e-3 && Math.abs(v) < 1e4 ? String(Number(v.toPrecision(4))) : v.toExponential(2));
 const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}`;
-const config = { thrustScale, panels: panels.map((x) => x.readout) };
+const config = { thrustScale, panels: panels.map((x) => x.readout), ghost };
 ---
 
 <figure class="trace-player not-content" id={id} aria-labelledby={`${id}-title`} data-trace-player>
@@ -53,6 +68,7 @@ const config = { thrustScale, panels: panels.map((x) => x.readout) };
         <div class="tp-overlay tp-legend">
           World: z up · Body: x forward, y left, z up<br />
           Rotors (PX4 Quad X): <b>0</b> FR, <b>1</b> RL spin CCW · <b>2</b> FL, <b>3</b> RR spin CW
+          {ghost && <><br />Translucent: {ghost.label}</>}
         </div>
         <div class="tp-bottom">
           <div class="tp-overlay tp-event" data-event aria-live="polite"></div>
@@ -78,7 +94,7 @@ const config = { thrustScale, panels: panels.map((x) => x.readout) };
             <span class="tp-panel-legend">
               {panel.legend.map((item, j) => (
                 <span class="tp-key">
-                  <span class={`tp-swatch k-${item.color}`} aria-hidden="true"></span>
+                  <span class={`tp-swatch k-${item.color}${item.dashed ? ' dashed' : ''}`} aria-hidden="true"></span>
                   {item.label}
                   <span class="tp-value" data-readout={j}></span>
                 </span>
@@ -225,8 +241,10 @@ const config = { thrustScale, panels: panels.map((x) => x.readout) };
   .trace-player .tp-muted { color: var(--tp-muted); }
   .trace-player .tp-value { color: var(--tp-ink); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
   .trace-player .tp-swatch { display: inline-block; width: 0.75rem; height: 3px; border-radius: 1.5px; vertical-align: middle; margin-right: 0.3rem; }
-  .trace-player .k-1 { background: var(--tp-s1); } .trace-player .k-2 { background: var(--tp-s2); }
-  .trace-player .k-3 { background: var(--tp-s3); } .trace-player .k-4 { background: var(--tp-s4); }
+  .trace-player .k-1 { --k: var(--tp-s1); } .trace-player .k-2 { --k: var(--tp-s2); }
+  .trace-player .k-3 { --k: var(--tp-s3); } .trace-player .k-4 { --k: var(--tp-s4); }
+  .trace-player .tp-swatch { background: var(--k); }
+  .trace-player .tp-swatch.dashed { background: repeating-linear-gradient(90deg, var(--k) 0 4px, transparent 4px 6px); }
   .trace-player svg.tp-plot { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: ew-resize; }
   .trace-player svg.tp-plot .surface { fill: var(--tp-surface); stroke: var(--tp-border); }
   .trace-player svg.tp-plot .grid { stroke: var(--tp-grid); stroke-width: 1; }
@@ -258,7 +276,7 @@ const config = { thrustScale, panels: panels.map((x) => x.readout) };
   .trace-player .tp-prov { overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 0.1rem 1rem; border-top: 1px solid var(--tp-border); padding-top: 0.5rem;
     color: var(--tp-muted); font-size: 0.75rem; }
   .trace-player .tp-prov a { color: var(--tp-ink2); }
-  .trace-player .tp-prov code { font-size: inherit; background: none; padding: 0; }
+  .trace-player .tp-prov code { font-size: inherit; background: none; padding: 0; overflow-wrap: anywhere; }
 </style>
 
 <script>

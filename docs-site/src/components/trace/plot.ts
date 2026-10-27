@@ -17,6 +17,21 @@ export interface PlotSpec {
   colors?: number[];
   /** Overlay `<channel>_setpoint` as dashed lines of the same colors. */
   setpoint?: boolean;
+  /** Fixed y-axis range [lo, hi], to zoom in on part of a signal; lines are clipped to it. Default: fit the data. */
+  yRange?: [number, number];
+  /** Further series from other channels, in the same units (for example a limit, or a second run). */
+  series?: SeriesSpec[];
+}
+
+export interface SeriesSpec {
+  channel: string;
+  /** Component of a vector channel (default 0). */
+  component?: number;
+  label: string;
+  /** Categorical color slot (1–4); default: the next after the main series. */
+  color?: number;
+  /** Draw dashed, as a reference rather than a measured signal. */
+  dashed?: boolean;
 }
 
 export interface Trace {
@@ -61,6 +76,9 @@ export function readoutDecimals(step: number): number {
   return decimals(step) + 1;
 }
 
+// Ids for the clip paths of zoomed plots, unique within a build.
+let clipId = 0;
+
 export function renderPlot(trace: Trace, spec: PlotSpec) {
   const { t } = trace;
   const data = trace.channels[spec.channel];
@@ -71,25 +89,36 @@ export function renderPlot(trace: Trace, spec: PlotSpec) {
   const setpoint = spec.setpoint ? trace.channels[`${spec.channel}_setpoint`] : undefined;
   if (spec.setpoint && !setpoint) throw new Error(`TracePlayer: no channel "${spec.channel}_setpoint"`);
   const unit = channelUnit(trace, spec.channel) ?? '';
+  const extra = (spec.series ?? []).map((e, j) => {
+    const series = trace.channels[e.channel];
+    if (!series) throw new Error(`TracePlayer: no channel "${e.channel}" in the trace`);
+    const u = channelUnit(trace, e.channel) ?? '';
+    if (u !== unit) throw new Error(`TracePlayer: series "${e.channel}" is in ${u}, the plot in ${unit}`);
+    return { ...e, data: series, component: e.component ?? 0, color: e.color ?? Math.min(4, comps.length + j + 1) };
+  });
 
   // A loop, not Math.min(...values): spreading a long trace overflows the stack.
   let lo = Infinity;
   let hi = -Infinity;
-  for (const series of setpoint ? [data, setpoint] : [data]) {
+  const extend = (series: (number | number[])[], c: number) => {
     for (const entry of series) {
-      for (const c of comps) {
-        const v = component(entry, c);
-        if (v < lo) lo = v;
-        if (v > hi) hi = v;
-      }
+      const v = component(entry, c);
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
     }
+  };
+  for (const series of setpoint ? [data, setpoint] : [data]) comps.forEach((c) => extend(series, c));
+  extra.forEach((e) => extend(e.data, e.component));
+  if (spec.yRange) {
+    [lo, hi] = spec.yRange;
+    if (!(hi > lo)) throw new Error(`TracePlayer: plot "${spec.title}" has an empty yRange`);
   }
   const minSpan = Math.max(Math.abs(hi), Math.abs(lo), 1) * 0.1;
   if (hi - lo < minSpan * 1e-6) {
     lo -= minSpan / 2;
     hi += minSpan / 2;
   }
-  const pad = (hi - lo) * 0.08;
+  const pad = spec.yRange ? 0 : (hi - lo) * 0.08;
   const yt = ticks(lo - pad, hi + pad, 3);
   lo = Math.min(lo - pad, yt.values[0]);
   hi = Math.max(hi + pad, yt.values[yt.values.length - 1]);
@@ -117,7 +146,10 @@ export function renderPlot(trace: Trace, spec: PlotSpec) {
     .map((c, j) =>
       (setpoint ? `<polyline class="line thin dashed s-${colors[j]}" points="${line(setpoint, c)}"/>` : '') +
       `<polyline class="line s-${colors[j]}" points="${line(data, c)}"/>`)
-    .join('');
+    .join('') +
+    extra
+      .map((e) => `<polyline class="line${e.dashed ? ' thin dashed' : ''} s-${e.color}" points="${line(e.data, e.component)}"/>`)
+      .join('');
 
   // The legend (rendered as HTML by TracePlayer) doubles as the cursor readout.
   const labels = spec.labels ?? comps.map((c) => (width === 1 ? spec.title : `[${c}]`));
@@ -127,14 +159,26 @@ export function renderPlot(trace: Trace, spec: PlotSpec) {
     grid + events +
     `<line class="axis" x1="${X0}" x2="${X1}" y1="${BOTTOM}" y2="${BOTTOM}"/>` + xticks +
     `<text class="tick" x="6" y="${BOTTOM + 15}">t [s]</text>` +
-    lines +
+    (spec.yRange
+      ? `<clipPath id="tp-clip-${++clipId}"><rect x="${X0}" y="${TOP}" width="${X1 - X0}" height="${BOTTOM - TOP}"/></clipPath>` +
+        `<g clip-path="url(#tp-clip-${clipId})">${lines}</g>`
+      : lines) +
     `<line class="tp-cursor" x1="${X0}" x2="${X0}" y1="${TOP - 2}" y2="${BOTTOM}"/>` +
     `</svg>`;
   return {
     title,
     svg,
     dashed: Boolean(setpoint),
-    legend: comps.map((c, j) => ({ label: labels[j], color: colors[j], component: c })),
-    readout: { channel: spec.channel, comps, decimals: readoutDecimals(yt.step) },
+    legend: [
+      ...comps.map((_, j) => ({ label: labels[j], color: colors[j], dashed: false })),
+      ...extra.map((e) => ({ label: e.label, color: e.color, dashed: Boolean(e.dashed) })),
+    ],
+    readout: {
+      items: [
+        ...comps.map((c) => ({ channel: spec.channel, component: c })),
+        ...extra.map((e) => ({ channel: e.channel, component: e.component })),
+      ],
+      decimals: readoutDecimals(yt.step),
+    },
   };
 }

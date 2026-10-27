@@ -12,3 +12,6 @@ public/api/
 # Generated benchmark gate data (built by `npm run gen:benchmarks`, via the
 # prebuild/predev hooks); pinned to the C++ test gates + CI config.
 src/data/benchmarks.json
+
+# WebAssembly module of the live widgets (built by scripts/build-wasm.sh)
+public/wasm/

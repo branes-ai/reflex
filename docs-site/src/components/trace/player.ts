@@ -8,8 +8,7 @@
 //     samples, so nothing on screen is computed here (ANI-1).
 
 interface Readout {
-  channel: string;
-  comps: number[];
+  items: { channel: string; component: number }[];
   decimals: number;
 }
 
@@ -20,13 +19,15 @@ interface Payload {
     events?: { t: number; label: string }[];
     vehicle?: { arm_length?: number };
   };
-  config: { thrustScale: number; panels: Readout[] };
+  config: { thrustScale: number; panels: Readout[]; ghost?: GhostSpec };
 }
 
 export interface ViewHandle {
   show(index: number): void;
   setCamera(mode: string): void;
 }
+
+import type { GhostSpec } from './vehicle-view';
 
 const reducedMotion = () => window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 const SPEEDS = [0.1, 0.25, 0.5, 1];
@@ -81,8 +82,8 @@ function attach(root: HTMLElement) {
       const x = x0 + ((tk - t[0]) / (t[n - 1] - t[0])) * (x1 - x0);
       p.cursor.setAttribute('x1', String(x));
       p.cursor.setAttribute('x2', String(x));
-      const entry = trace.channels[p.readout.channel][index];
-      p.readout.comps.forEach((c, j) => {
+      p.readout.items.forEach(({ channel, component: c }, j) => {
+        const entry = trace.channels[channel][index];
         const v = Array.isArray(entry) ? entry[c] : entry;
         const text = v.toFixed(p.readout.decimals);
         p.values[j].textContent = Number(text) === 0 ? (0).toFixed(p.readout.decimals) : text;  // no "-0.00"
@@ -203,7 +204,11 @@ function attach(root: HTMLElement) {
         io.disconnect();
         try {
           const { createVehicleView } = await import('./vehicle-view');
-          view = createVehicleView(host, trace, { thrustScale: config.thrustScale, reducedMotion: reducedMotion() });
+          view = createVehicleView(host, trace, {
+            thrustScale: config.thrustScale,
+            reducedMotion: reducedMotion(),
+            ghost: config.ghost,
+          });
         } catch (err) {
           // A failed chunk load or a renderer error leaves the plots working.
           console.error('TracePlayer: 3-D view unavailable', err);

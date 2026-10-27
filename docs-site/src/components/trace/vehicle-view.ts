@@ -207,7 +207,20 @@ export function createVehicleView(
     );
 
   function build() {
-    built.forEach((o) => scene.remove(o));
+    // Release the old objects' GPU buffers: build() runs on every theme change
+    // and every live rerun, and three.js frees nothing until dispose().
+    built.forEach((o) => {
+      scene.remove(o);
+      o.traverse((c: THREE.Object3D) => {
+        const m = c as THREE.Mesh;
+        m.geometry?.dispose();
+        const mat = m.material as THREE.Material | THREE.Material[] | undefined;
+        for (const x of Array.isArray(mat) ? mat : mat ? [mat] : []) {
+          (x as THREE.SpriteMaterial).map?.dispose();
+          x.dispose();
+        }
+      });
+    });
     const c = tokens(host);
 
     // Ground grid on z = 0, 0.5 m squares, covering the trajectory.

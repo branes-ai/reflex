@@ -246,7 +246,7 @@ fail.
 | Profile | Used by | Compared | $r_{\text{tol}}$ | $a_{\text{tol}}$ |
 |---|---|---|---|---|
 | `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events`, and `checks` | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds and their setpoints 1e-6 rad/s; other channels 1e-9 in their unit |
-| `wasm` | Tier 2: Wasm against native, reference scenario only | Reserved channels; rules 2–3 apply to them, and rules 4–5 do not | 1e-9 | as `regen` |
+| `wasm` | Tier 2: Wasm against native, every live scenario at its default parameters | Reserved channels; rules 2–3 apply to them, and rules 4–5 do not | 1e-9 | as `regen` |
 
 - **Attitude** is compared as the rotation angle
   $2\,\mathrm{asin}(\lVert \mathrm{vec}(q_a^{-1} \otimes q_b) \rVert)$, so
@@ -305,7 +305,7 @@ on.
 |---|---|---|
 | **P0. Infrastructure** | `reflex-trace/1` schema and a C++ writer in `tools/`; `TracePlayer` Astro component (time base, controls, keyboard, reduced motion); plot panel built on the existing `SignalFigure` style with a time cursor; `VehicleView` (three.js: axes, grid, Quad X glyph with rotor numbers and spin arrows, thrust vectors, body axes, trail); CI staleness and size-budget checks | A test trace plays on a docs page in both themes and at phone width; changing the model makes CI fail until the trace is regenerated |
 | **P1. Quadrotor model pilot** | Explainer: rotor to thrust and torque; motor-lag step; roll spin-up coupling into translation; torque-free tumbling with asymmetric inertia (the intermediate-axis instability), with energy and angular momentum plotted flat. V&V: mirror relation side by side (BB-V4); trajectories against dt (BB-V2); ground contact. Deployment: full-throttle punch-out into saturation; battery sag. Developer guide: an invariant-violation replay | Each animation meets ANI-1 to ANI-12; page review by one newcomer and one integrator |
-| **P2. Live widgets** | Emscripten build target (pinned emsdk) of the model, mixer, and cascade with a small C ABI; explainer widgets with sliders for τ, inertia, and gains; CI checks that Wasm and native traces agree | Widgets run the real headers; agreement within the golden tolerance on the reference scenario |
+| **P2. Live widgets** | Emscripten build target (pinned emsdk) of the model, mixer, and cascade with a small C ABI; explainer widgets with sliders for τ, inertia, and gains; CI checks that Wasm and native traces agree | Widgets run the real headers; agreement within the golden tolerance on every live scenario, at its default parameters |
 | **P3. Control and DSP blocks** | PID: windup and the anti-windup clamp, with the integrator state shown against saturation. Mixer: rotor thrust bars at their limits, and the torque given up first. Cascade: closed-loop roll step and waypoint run, with each loop's setpoint shown. Filters: a signal through an RPM-tracked notch during a throttle sweep, with an animated spectrogram | Four pages per block for each of these blocks |
 | **P4. Scenario gallery** | Nightly scenario runs (BB-I2) publish their traces; a gallery page lists every scenario with playback and its checks | Gallery regenerates nightly; a failing scenario shows as failing |
 | **P5. Shared with racing-drone** | `TracePlayer` and the schema published for reuse (an npm package or a versioned asset); racing-drone exports mission replays in `reflex-trace/1` | A racing-drone replay plays in the same player |

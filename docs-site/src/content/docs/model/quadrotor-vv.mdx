@@ -3,6 +3,11 @@ title: Quadrotor V&V Plan
 description: The plan, harnesses, and evidence ledger that take QuadrotorModel from grade C to A+ under the building block standard, in isolation and in closed loop.
 ---
 
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import mirror from '../../../traces/quadrotor/mirror.json';
+import dtConvergence from '../../../traces/quadrotor/dt_convergence.json';
+import groundContact from '../../../traces/quadrotor/ground_contact.json';
+
 This plan takes [`QuadrotorModel`](/model/quadrotor/) to grade **A+** under
 the [building block standard](/standards/building-blocks/). It lists where the
 model stands against each requirement, the harnesses that produce the missing
@@ -29,7 +34,7 @@ Assessment on 2026-10-25, against commit `0b42690`.
 | S1 spec | ✅ | Equations, conventions, I1–I5, `step()` contract in `quadrotor.hpp` |
 | S2 envelope | ✅ | Non-modelled effects and the expected envelope in the header and the [usage page](/model/quadrotor/#validity-envelope) (M1); measured envelope pending L4 |
 | S3 parameters | ✅ | `quadrotor_params_valid`, units, RP-1 defaults from `vehicles/rp1.yaml` |
-| S4 scalar types | ✅ | I2 tolerance is 8·ε of the type (M1); I2–I5 tested in double, float, posit<16,1>, bfloat16; binary16 rejected by I1 |
+| S4 scalar types | ✅ | I2 tolerance is 8·ε of the type (M1); I2–I5 tested in double, float, `posit<16,1>`, bfloat16; binary16 rejected by I1 |
 | S5 resource | ◐ | Structural statement in the header, fixed operation count per contact arm tested with `Counted<double>` (`tests/sdk/quadrotor_resource.cpp`, M1). The processor-specific bound is M11 |
 | T1 unit | ✅ | `tests/sdk/quadrotor_model.cpp` and `quadrotor_resource.cpp`; each state invariant's violation is named by `quadrotor_state_violation()` |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
@@ -515,12 +520,85 @@ a PX4 SITL simulator bridge, a Gazebo system plugin, or an FMI 3.0
 co-simulation FMU. The bridge has a convention test: a single-rotor step
 gives the same torque sign through it as through the native API.
 
+## Animations
+
+These animations illustrate three of the requirements above. Each plays a
+trace from a scenario in `tools/trace/scenarios/quadrotor/`, and each
+scenario computes the check shown under its player. They are not the
+evidence for the requirement (ANI-4). Each is one scenario, where the
+harness in [WS2](#ws2-verification) or [WS3](#ws3-robustness-t3t7) runs
+many, and the status table above follows the harnesses.
+
+### Mirror relation (BB-V4)
+
+Reflecting the world through the x–z plane (y → −y) maps the Quad X onto
+itself, with rotors 0 ↔ 2 and 1 ↔ 3 swapped and their spins reversed. So a
+reflected start, flown with reflected commands, must give the reflected
+trajectory. The relation is the "Mirror" row of the
+[V4 table](#ws2-verification).
+
+<TracePlayer
+  trace={mirror}
+  title="Does the reflected flight mirror the original?"
+  description="Two runs fly side by side. The solid vehicle starts at 2 m, tilted, moving, and rotating, and flies 1 s of piecewise-constant commands within ±8 % of hover, drawn from a seeded generator. The translucent vehicle starts from the reflected state and flies the reflected commands. The two stay mirror images throughout: y and the roll rate are equal and opposite, and the mirrored rotor 2 matches the original rotor 0. Pass criterion: the largest difference between the mirrored run and the reflected original, over every state component and step, is at most 512 ε relative to that component's largest magnitude. The two runs add the rotor terms in a different order, so they agree to roundoff rather than bit for bit."
+  ghost={{ position: 'mirror_position', attitude: 'mirror_attitude', thrusts: 'mirror_rotor_thrusts', label: 'the mirrored run' }}
+  plots={[
+    { channel: 'position', title: 'Lateral position', components: [1], labels: ['y'],
+      series: [{ channel: 'mirror_position', component: 1, label: 'y, mirrored run', dashed: true }] },
+    { channel: 'body_rates', title: 'Roll rate', components: [0], labels: ['p'],
+      series: [{ channel: 'mirror_body_rates', component: 0, label: 'p, mirrored run', dashed: true }] },
+    { channel: 'rotor_speeds', title: 'Rotor speed', components: [0], labels: ['rotor 0'],
+      series: [{ channel: 'mirror_rotor_speeds', component: 2, label: 'rotor 2, mirrored run', dashed: true }] },
+  ]}
+/>
+
+### Convergence with step size (BB-V2)
+
+The same flight is integrated at five step sizes, from 10 ms down to
+0.625 ms, and compared with a reference run at 10 ms / 1024. The set-up
+follows the [baseline probe](#baseline-observed-order-of-accuracy):
+non-symmetric inertia, linear and quadratic drag, initial body rates
+(2, −1, 3) rad/s, and a constant differential command.
+
+<TracePlayer
+  trace={dtConvergence}
+  title="How fast does the error shrink as the step size halves?"
+  description="The vehicle in the view flies the reference run. The plot shows, on a log scale, the largest position error of each step size against the reference. Every run starts exact (shown at the 10⁻¹⁶ floor). The errors grow over the flight, and the five curves stay about 1.2 decades apart: each halving of the step cuts the error by about 16 = 2⁴, as a fourth-order method should. At 0.64 s the errors run from about 7·10⁻⁷ m at 10 ms to 8·10⁻¹² m at 0.625 ms. Pass criterion: the observed order, fitted between neighbouring step sizes on the final position error, is at least 3.7 for every pair above the roundoff floor."
+  plots={[
+    { channel: 'position_error_log10', title: 'Position error, log10', components: [0, 1, 2, 3],
+      labels: ['10 ms', '5 ms', '2.5 ms', '1.25 ms'],
+      series: [{ channel: 'position_error_log10', component: 4, label: '0.625 ms', color: 1, dashed: true }] },
+    { channel: 'body_rates', title: 'Body rates (reference run)', labels: ['p', 'q', 'r'] },
+  ]}
+/>
+
+### Ground contact
+
+Contact is a stop, not a contact model ([finding 4](#findings-that-shape-the-plan)).
+A grounded vehicle stays put while its vertical thrust is at most its
+weight, and a vehicle that reaches the ground stops there, keeping its
+attitude. The check is property 5 of the [WS3 property tests](#ws3-robustness-t3t7),
+run on one scenario.
+
+<TracePlayer
+  trace={groundContact}
+  title="What does the model do at take-off and touch-down?"
+  description="The vehicle starts on the ground with its rotors stopped. From 0.2 s the rotors spin up to 90 % of the hover speed: 81 % of the weight, so the vehicle stays still. At 0.8 s the command rises to 110 %, and the vehicle lifts off 15 ms later, as soon as its vertical thrust passes its weight. It climbs to about 1.1 m. At 1.6 s the command drops to 85 % with a roll pulse on top, so it descends rolled about 22° right side down and drifts to the right. At touch-down, at 2.99 s, its velocity and body rates go to zero in one step, and it keeps its 22° tilt on the ground: no bounce, slide, or tip-over. Pass criterion: no grounded step with vertical thrust at or below the weight changes the position or the attitude."
+  plots={[
+    { channel: 'vertical_thrust', title: 'Vertical thrust', labels: ['vertical thrust'],
+      series: [{ channel: 'weight', label: 'weight', dashed: true }] },
+    { channel: 'position', title: 'Height', components: [2], labels: ['z'] },
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'] },
+    { channel: 'on_ground', title: 'On the ground', labels: ['on_ground'] },
+  ]}
+/>
+
 ## Evidence ledger
 
 | Claim | Evidence | Harness | Gate |
 |---|---|---|---|
 | Each state invariant's violation is reported by name | One case per invariant, and the checking order | `tests/sdk/quadrotor_model` | PR |
-| I2–I5 hold at 16-bit precision | 2000 spinning steps in posit<16,1> and bfloat16 | `tests/sdk/quadrotor_model` | PR |
+| I2–I5 hold at 16-bit precision | 2000 spinning steps in `posit<16,1>` and bfloat16 | `tests/sdk/quadrotor_model` | PR |
 | step() has a fixed operation count per contact arm | 4000 generated states, all four arms | `tests/sdk/quadrotor_resource` | PR |
 | RK4 is fourth order on the full model | p ∈ [3.7, 4.4], all state groups | `tests/verification/quadrotor_convergence` | PR |
 | Each equation term has the right magnitude | Closed-form cases | `tests/verification/quadrotor_analytic` | PR |

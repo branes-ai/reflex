@@ -19,3 +19,10 @@
   --sl-color-bg-nav: #f7f7f8;
   --sl-color-bg-sidebar: #f7f7f8;
 }
+
+/* Wide display math scrolls inside its own box instead of widening the page
+   at phone width. */
+.sl-markdown-content .katex-display {
+  overflow-x: auto;
+  overflow-y: hidden;
+}

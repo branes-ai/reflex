@@ -3,6 +3,9 @@ title: Cascaded Controller
 description: branes::reflex::control::Cascade — position, attitude, and rate loops for multirotors, from state to wrench.
 ---
 
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import rollStep from '../../../traces/cascade/roll_step.json';
+
 `#include <branes/reflex/control/cascade.hpp>`
 
 **Grade: C** (specified and unit-tested) under the
@@ -104,6 +107,40 @@ vehicle whose thrust-to-weight ratio exceeds 1.25 (the collective limit is
 Either way, check it with `cascade_config_valid()` before constructing a
 `Cascade`: the constructor only asserts validity, and release builds compile
 the assertion out.
+
+## Try the gains
+
+The widget below flies a 30° roll step through the whole loop: cascade,
+mixer, and [`QuadrotorModel`](/model/quadrotor/). The sliders set the roll
+and pitch gains of the attitude loop (K) and of the rate loop (k_p). Every
+other gain and limit stays at `cascade_config_from(RP-1)`. Each slider move
+reruns the scenario's C++, compiled to WebAssembly, in your browser. The
+check under the player is the overshoot criterion of the closed-loop tests,
+and the scenario recomputes it with your gains.
+
+<TracePlayer
+  trace={rollStep}
+  live="roll_step"
+  prompt="the attitude loop runs at K = 10 /s, a fifth of the rate loop's 50 /s. Raise K toward the rate gain, or lower the rate gain toward K: what happens to the overshoot?"
+  title="How do the loop gains shape a roll step?"
+  description="The vehicle hovers at 2 m. At 0.1 s the cascade, in attitude mode, is given a target of 30° roll at hover thrust. The attitude loop turns the angle error into a roll-rate setpoint (dashed in the rate plot). The rate loop turns the rate error into a torque, and the mixer and the motors deliver it. With the default gains the roll reaches 90 % of the step in 0.16 s, without overshoot. The roll rate follows its setpoint closely, because the rate loop is five times faster than the attitude loop. The vehicle holds the roll at hover thrust, so it accelerates to the right and sinks: a held attitude is not a hover."
+  plots={[
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'],
+      series: [{ channel: 'roll_setpoint', label: 'target', dashed: true }] },
+    { channel: 'body_rates', title: 'Roll rate', components: [0], labels: ['p'],
+      series: [{ channel: 'body_rates_setpoint', component: 0, label: 'setpoint', dashed: true }] },
+    { channel: 'body_torque', title: 'Roll torque', components: [0], labels: ['τ_x'] },
+    { channel: 'rotor_speeds', title: 'Rotor speeds', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR (= 3 RR)', '1 RL (= 2 FL)'] },
+  ]}
+/>
+
+When the two loops' bandwidths come close, the attitude loop asks for rates
+faster than the rate loop can deliver, and the roll overshoots. The default
+ratio of 5 leaves margin for slower motors, more inertia, and delay (the
+[perturbation set](#what-the-evidence-shows)). The widget changes only the
+gains. The same vehicle runs underneath, so the effect on the check is the
+gains' alone.
 
 ## What the evidence shows
 

@@ -1,12 +1,13 @@
 name: Deploy Documentation
 
-# Builds the Starlight docs site + the Doxygen C++ API reference and
-# publishes them to GitHub Pages at https://branes-ai.github.io/reflex/.
+# Builds the Starlight docs site, the Doxygen C++ API reference, and the
+# WebAssembly module of the live widgets, and publishes them to GitHub Pages
+# at https://branes-ai.github.io/reflex/.
 #
 # One-time setup (repo admin, cannot be automated here): Settings → Pages →
 # Build and deployment → Source = "GitHub Actions". After that, every push
-# to main touching docs-site/, the public headers (API reference), or this
-# workflow redeploys.
+# to main touching docs-site/, the public headers (API reference), the
+# scenarios and tools behind the widgets, or this workflow redeploys.
 
 on:
   push:
@@ -14,6 +15,9 @@ on:
     paths:
       - 'docs-site/**'
       - 'sdk/include/**'
+      - 'tools/**'
+      - 'scripts/build-wasm.sh'
+      - 'scripts/emsdk-version'
       - '.github/workflows/deploy-docs.yml'
   workflow_dispatch:
 
@@ -70,6 +74,17 @@ jobs:
       - name: Generate C++ API reference (Doxygen)
         working-directory: docs-site
         run: npm run api
+
+      - name: Install CMake 4.x + Ninja
+        uses: lukka/get-cmake@fffaaafeea488556c2c12dad60690008bc1caacb  # v4.4.2
+        with:
+          cmakeVersion: "~4.0.0"
+
+      - name: Build the WebAssembly module (pinned emsdk)
+        run: |
+          scripts/install-emsdk.sh "$RUNNER_TEMP/emsdk"
+          source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
+          scripts/build-wasm.sh
 
       - name: Build site (Astro)
         working-directory: docs-site

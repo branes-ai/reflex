@@ -109,7 +109,15 @@ export default defineConfig({
                 { label: 'Deployment Guide', slug: 'control/pid-deployment' },
               ],
             },
-            { label: 'Mixer', slug: 'control/mixer' },
+            {
+              label: 'Mixer',
+              items: [
+                { label: 'Explainer', slug: 'control/mixer-explainer' },
+                { label: 'Developer Guide', slug: 'control/mixer' },
+                { label: 'V&V Plan', slug: 'control/mixer-vv' },
+                { label: 'Deployment Guide', slug: 'control/mixer-deployment' },
+              ],
+            },
             { label: 'Cascaded Controller', slug: 'control/cascade' },
           ],
         },

@@ -1,0 +1,135 @@
+---
+title: Mixer
+description: Developer guide for branes::reflex::control::Mixer, the Quad X thrust and torque allocation with saturation priority.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import throttleSweep from '../../../traces/mixer/throttle_sweep.json';
+
+`#include <branes/reflex/control/mixer.hpp>`
+
+**Grade: not yet C**, under the
+[building block standard](/standards/building-blocks/). Two C requirements
+are short: no test of the operation count (BB-S5), and no benchmark. The
+[V&V plan](/control/mixer-vv/) has the assessment and the path to A.
+
+This is the developer guide: the allocation, the priority, the saturation
+report, and the API. The [explainer](/control/mixer-explainer/) shows the
+mixer at work, and the [deployment guide](/control/mixer-deployment/)
+covers its parameters and wiring it into a loop.
+
+`branes::reflex::control::Mixer<T>` turns a body-frame wrench (collective
+thrust plus roll, pitch, and yaw torque) into four rotor thrusts, and back. It
+uses the conventions of the [quadrotor model](/model/quadrotor/): body frame
+x forward, y left, z up, and PX4 Quad X rotor order (0 front-right CCW,
+1 rear-left CCW, 2 front-left CW, 3 rear-right CW). It is stateless apart from
+its parameters, constant time, allocation-free, and templated on the scalar
+type.
+
+## Allocation
+
+With rotors at (±a, ±a, 0), a = L/√2, and yaw coefficient k_m:
+
+| Wrench | T₀ | T₁ | T₂ | T₃ |
+|---|---|---|---|---|
+| F | 1 | 1 | 1 | 1 |
+| τx / a | −1 | +1 | +1 | −1 |
+| τy / a | −1 | +1 | −1 | +1 |
+| τz / k_m | −1 | −1 | +1 | +1 |
+
+The rows are orthogonal, so the inverse is closed form:
+Tᵢ = F/4 + sxᵢ·τx/(4a) + syᵢ·τy/(4a) + szᵢ·τz/(4k_m).
+`allocate()` is that inverse with no limits, and `wrench()` is the forward map.
+
+## Saturation priority
+
+`mix()` keeps every rotor in [T_min, T_max] and gives up the demand in a fixed
+order:
+
+1. **Roll and pitch** shrink, by a common factor σ that keeps their direction,
+   only when they cannot fit at any collective thrust.
+2. **Collective thrust** moves as little as possible to make room for roll and
+   pitch. It moves both ways: at zero throttle it rises to keep attitude
+   authority (airmode). Arming and motor idle belong to the state machine
+   around the mixer.
+3. **Yaw** is scaled by the largest s ∈ [0, 1] that still fits.
+
+A demand that already fits comes back unchanged, and the output is
+continuous in the demand. `MixerOutput` reports the thrusts, the wrench they
+achieve, σ (`rp_scale`), s (`yaw_scale`), and whether the collective moved, so
+the rate loop can stop integrating on saturated axes.
+
+### How `mix()` computes it
+
+Rotors 0 and 1 (pair a) differ only by the roll/pitch term ±d_a, and rotors
+2 and 3 (pair b) by ±d_b. Yaw moves pair a down by Y and pair b up by Y.
+So every allocation has the form (u_a ± σd_a, u_b ± σd_b), with pair means
+u_a = c − t and u_b = c + t for a collective c and a yaw offset t. The
+three steps then pick, lexicographically:
+
+1. the largest σ ∈ (0, 1] with 2σ·max(|d_a|, |d_b|) ≤ T_max − T_min;
+2. the c closest to F/4 for which some yaw t = s·Y, s ∈ [0, 1], fits;
+3. the largest s that fits around that c.
+
+Each step clamps a value to an interval whose ends are continuous in the
+demand, so the result is continuous too. Step 2 asks only that *some* yaw
+fits, so yaw can rank below the collective and still be kept where it
+helps. When one pair has the wider roll/pitch spread, it reaches a limit
+at a lower mean than the other. A yaw offset that moves thrust onto the
+narrower pair then lets the collective rise, and step 3 keeps it. The rounding guard
+in the clamp returns the midpoint when rounding leaves an interval empty,
+and the final per-rotor clamp keeps the bounds exact at the edges.
+
+## The saturation report
+
+`saturation_from(w, out)` turns a `mix()` result into what the control loops
+need: for roll, pitch, yaw, and the collective, +1 if the mixer delivered
+less than the demand (cut high), −1 if it delivered more (cut low), and 0 if
+it met it. Roll and pitch are cut when σ < 1, yaw when s < 1, each in the
+direction of its demand's sign. The collective is cut in the direction of
+demand − achieved, so airmode reports −1.
+
+The cascade passes the report to its PID integrators, through
+`Cascade::feedback()`, on the next tick (Pid's four-argument `update()`; see
+[external saturation](/control/pid-deployment/#external-saturation)).
+
+<TracePlayer
+  trace={throttleSweep}
+  title="Which channel does the report flag as the throttle sweeps?"
+  description="The throttle sweep of the explainer: τ = (0.5, 0.2, 0.1) N·m held, and the collective demand F from 0 to 52 N over 6.5 s. Roll and pitch are never cut. Below F = 9 N airmode lifts the collective, which the report flags as −1 (delivered more than asked), and yaw is cut (+1, delivered less than its positive demand). Yaw stays cut up to F = 15.4 N. From there to 38 N the report is all zeros. From 38 N yaw is cut again, and from 41.6 N the collective too, now +1: the rotors deliver less than F."
+  plots={[
+    { channel: 'report', title: 'Saturation report', labels: ['roll', 'pitch', 'yaw', 'collective'], colors: [1, 2, 3, 4] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['demanded', 'achieved'], colors: [4, 3] },
+    { channel: 'scales', title: 'σ and s', labels: ['σ, roll and pitch', 's, yaw'], colors: [1, 2] },
+  ]}
+/>
+
+## API
+
+| Member | Contract |
+|---|---|
+| `MixerParams<T>` | Arm length L [m], k_m [m], k_f [N/(rad/s)²], T_min and T_max [N] per rotor. A plain aggregate |
+| `mixer_params_valid(p)` | Every value finite, L > 0, k_m > 0, k_f > 0, 0 ≤ T_min < T_max (I1) |
+| `mixer_params_from(q)` | The mixer for the vehicle `QuadrotorParams` q describes, with T_min = 0 |
+| `Mixer(p)` | Pre: `mixer_params_valid(p)`. Derives a, 1/(4a), and 1/(4k_m) (I2) |
+| `allocate(w)` | B⁻¹·w, no limits. Pre: w finite. Post: `wrench(allocate(w)) == w` to rounding |
+| `wrench(t)` | B·t, the wrench the thrusts t make. Pre: t finite |
+| `mix(w)` | Pre: w finite. Post: every thrust in [T_min, T_max]; `achieved == wrench(thrusts)`; achieved torque = (στx, στy, sτz) with σ ∈ (0, 1], s ∈ [0, 1]; a demand within the limits comes back unchanged with σ = s = 1 |
+| `to_rotor_command(t)` | ω_i = √(t_i/k_f), for a full battery. Pre: every t_i finite and ≥ 0 |
+| `saturation_from(w, out)` | The report above. `noexcept` |
+
+Every operation is a pure, constant-time function that never allocates.
+Preconditions are checked with `assert` in Debug builds.
+
+## Usage
+
+```cpp
+using namespace branes::reflex;
+const model::QuadrotorParams<double> vehicle{};             // RP-1 defaults
+const control::Mixer<double> mixer(control::mixer_params_from(vehicle));
+const auto out = mixer.mix({20.0, vec3(0.1, -0.05, 0.02)}); // F [N], τ [N·m]
+const model::RotorCommand<double> u = mixer.to_rotor_command(out.thrusts);
+```
+
+`to_rotor_command()` inverts T = k_f·ω² for a full battery. The control loops
+absorb battery sag.

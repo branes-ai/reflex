@@ -91,6 +91,22 @@ Each entry of `plots` takes:
 
 The [quadrotor model pages](/model/quadrotor-explainer/) use each of these.
 
+An entry with `kind: 'bars'` is a bar panel instead: one bar per component
+of a vector channel, at the cursor's sample, for quantities read side by
+side rather than over time. The bars move with the cursor, and their values
+are printed under them. It has no time axis, and its y range is fitted to
+the whole trace so the axis holds still.
+
+| Field | Meaning |
+|---|---|
+| `channel`, `title`, `labels`, `label` | The vector channel, the panel title (the unit is appended), a label under each bar, and the legend label |
+| `compare` | `{ channel, label }`: a second run's channel of the same width, its bars beside the first |
+| `marker` | `{ channel, label }`: a channel of the same width drawn as a dashed outline over each bar, such as the demand before limits |
+| `limits` | `{ channel, label }`: a two-component channel `[lo, hi]`, drawn as dashed lines across the panel |
+
+The [mixer explainer](/control/mixer-explainer/) uses one for the rotor
+thrusts.
+
 ## What CI checks
 
 The `Docs traces` job in `ci.yml` runs on every pull request:

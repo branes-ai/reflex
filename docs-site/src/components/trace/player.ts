@@ -12,6 +12,7 @@
 interface Readout {
   items: { channel: string; component: number }[];
   decimals: number;
+  bars?: BarsReadout;
 }
 
 type Trace = TraceParts & {
@@ -33,7 +34,7 @@ interface LiveParam {
 interface LiveConfig {
   scenario: string;
   params: LiveParam[];
-  plots: PlotSpec[];
+  plots: PanelSpec[];
   key: string;
   wasm: string;
 }
@@ -50,7 +51,7 @@ export interface ViewHandle {
 }
 
 import type { GhostSpec } from './vehicle-view';
-import { renderPlot, type PlotSpec } from './plot';
+import { barGeometry, renderPanel, type BarsReadout, type PanelSpec } from './plot';
 import { renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
 import { runLive } from '../../lib/trace/live.js';
 
@@ -86,7 +87,7 @@ function attach(root: HTMLElement) {
   const panels = [...root.querySelectorAll<HTMLElement>('[data-panel]')].map((el, i) => ({
     host: el.querySelector<HTMLElement>('[data-svg]')!,
     svg: el.querySelector<SVGSVGElement>('svg')!,
-    cursor: el.querySelector<SVGLineElement>('.tp-cursor')!,
+    cursor: el.querySelector<SVGLineElement>('.tp-cursor'),
     values: [...el.querySelectorAll<HTMLElement>('[data-readout]')],
     readout: config.panels[i],
   }));
@@ -122,11 +123,15 @@ function attach(root: HTMLElement) {
     scrub.value = String(index);
     scrub.setAttribute('aria-valuetext', label);
     for (const p of panels) {
+      if (p.readout.bars) {
+        showBars(p.svg, trace, index, p.readout.bars);
+        continue;
+      }
       const x0 = Number(p.svg.dataset.x0);
       const x1 = Number(p.svg.dataset.x1);
       const x = x0 + ((tk - t[0]) / (t[n - 1] - t[0])) * (x1 - x0);
-      p.cursor.setAttribute('x1', String(x));
-      p.cursor.setAttribute('x2', String(x));
+      p.cursor!.setAttribute('x1', String(x));
+      p.cursor!.setAttribute('x2', String(x));
       p.readout.items.forEach(({ channel, component: c }, j) => {
         const entry = trace.channels[channel][index];
         const v = Array.isArray(entry) ? entry[c] : entry;
@@ -198,6 +203,7 @@ function attach(root: HTMLElement) {
   // Scrubbing on any plot. The listeners sit on the panel's SVG host, which
   // outlives the SVG when a live trace re-renders it.
   for (const p of panels) {
+    if (p.readout.bars) continue;  // no time axis to scrub along
     const toIndex = (ev: PointerEvent) => {
       const ctm = p.svg.getScreenCTM();
       if (!ctm) return index;
@@ -224,10 +230,10 @@ function attach(root: HTMLElement) {
     scrub.max = String(n - 1);
     if (config.live) {
       panels.forEach((p, i) => {
-        const r = renderPlot(trace, config.live!.plots[i], `${config.live!.key}-${i}`);
+        const r = renderPanel(trace, config.live!.plots[i], `${config.live!.key}-${i}`);
         p.host.innerHTML = r.svg;
         p.svg = p.host.querySelector('svg')!;
-        p.cursor = p.host.querySelector<SVGLineElement>('.tp-cursor')!;
+        p.cursor = p.host.querySelector<SVGLineElement>('.tp-cursor');
         p.readout = r.readout;
       });
     }
@@ -306,6 +312,38 @@ function attach(root: HTMLElement) {
 
   setRate(1);
   render();
+}
+
+/** Moves a bar panel's bars, outlines, limit lines, and value labels to sample k. */
+function showBars(svg: SVGSVGElement, trace: Trace, k: number, b: BarsReadout) {
+  const row = (name?: string) => (name ? (trace.channels[name][k] as number[]) : undefined);
+  const set = (el: Element | null, v: number) => {
+    if (!el) return;
+    const g = barGeometry(v, b.lo, b.hi);
+    el.setAttribute('y', g.y.toFixed(1));
+    el.setAttribute('height', g.height.toFixed(1));
+  };
+  const main = row(b.channel)!;
+  const compare = row(b.compare);
+  const marker = row(b.marker);
+  const fmt = (v: number) => {
+    const text = v.toFixed(b.decimals);
+    return Number(text) === 0 ? (0).toFixed(b.decimals) : text;  // no "-0.0"
+  };
+  main.forEach((v, i) => {
+    set(svg.querySelector(`[data-b="main-${i}"]`), v);
+    if (compare) set(svg.querySelector(`[data-b="cmp-${i}"]`), compare[i]);
+    if (marker) set(svg.querySelector(`[data-b="mk-${i}"]`), marker[i]);
+    const label = svg.querySelector(`[data-b="val-${i}"]`);
+    if (label) label.textContent = compare ? `${fmt(v)} | ${fmt(compare[i])}` : `${fmt(v)}${b.unit ? ` ${b.unit}` : ''}`;
+  });
+  const limits = row(b.limits);
+  limits?.forEach((v, j) => {
+    const line = svg.querySelector(`[data-b="lim-${j}"]`);
+    const y = barGeometry(v, b.lo, b.hi).line.toFixed(1);
+    line?.setAttribute('y1', y);
+    line?.setAttribute('y2', y);
+  });
 }
 
 /** The sliders of a live widget: each change reruns the scenario in WebAssembly. */

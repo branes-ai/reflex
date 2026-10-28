@@ -13,7 +13,7 @@
 // player then plays that trace instead.
 import { validateTrace } from '../../lib/trace/validate.js';
 import { LIVE } from '../../lib/trace/live.js';
-import { renderPlot, type PlotSpec } from './plot';
+import { renderPanel, type PanelSpec } from './plot';
 import { renderChecks, renderEvents, renderProvenance } from './parts';
 import type { GhostSpec } from './vehicle-view';
 
@@ -24,7 +24,8 @@ interface Props {
   title: string;
   /** Text description of what happens (ANI-10). */
   description: string;
-  plots: PlotSpec[];
+  /** Time plots, and bar panels (`kind: 'bars'`) that show one sample at the cursor. */
+  plots: PanelSpec[];
   /** Thrust-arrow scale [m per N]; shown on screen (ANI-5). */
   thrustScale?: number;
   /** Show the 3-D vehicle view (needs position and attitude). */
@@ -49,7 +50,7 @@ const p = trace.provenance;
 let hash = 0x811c9dc5;
 for (const c of title) hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
 const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}-${hash.toString(36)}`;
-const panels = plots.map((spec, i) => renderPlot(trace, spec, `${id}-${i}`));
+const panels = plots.map((spec, i) => renderPanel(trace, spec, `${id}-${i}`));
 if (ghost) {
   // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
   const need: [string | undefined, number][] = [[ghost.position, 3], [ghost.attitude, 4], [ghost.thrusts, 4]];
@@ -276,6 +277,11 @@ const config = {
   .trace-player svg.tp-plot .s-1 { stroke: var(--tp-s1); } .trace-player svg.tp-plot .s-2 { stroke: var(--tp-s2); }
   .trace-player svg.tp-plot .s-3 { stroke: var(--tp-s3); } .trace-player svg.tp-plot .s-4 { stroke: var(--tp-s4); }
   .trace-player svg.tp-plot .tp-cursor { stroke: var(--tp-ink); stroke-width: 1.25; }
+  .trace-player svg.tp-bars { cursor: default; }
+  .trace-player svg.tp-plot .f-1 { fill: var(--tp-s1); } .trace-player svg.tp-plot .f-3 { fill: var(--tp-s3); }
+  .trace-player svg.tp-plot .bar-marker { fill: none; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .trace-player svg.tp-plot .bar-label { fill: var(--tp-ink2); }
+  .trace-player svg.tp-plot .bar-value { fill: var(--tp-ink); }
   .trace-player .tp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-top: 0.75rem; }
   .trace-player .tp-play { width: 2.25rem; height: 2.25rem; display: grid; place-items: center; padding: 0; }
   .trace-player .tp-play path { fill: currentColor; }

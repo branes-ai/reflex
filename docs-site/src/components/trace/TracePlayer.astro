@@ -44,7 +44,11 @@ if (errors.length) {
 }
 const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
 const p = trace.provenance;
-const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}`;
+// Unique on the page even when several players show one trace: the title,
+// which differs between players, is hashed into the id (FNV-1a, 32 bits).
+let hash = 0x811c9dc5;
+for (const c of title) hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
+const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}-${hash.toString(36)}`;
 const panels = plots.map((spec, i) => renderPlot(trace, spec, `${id}-${i}`));
 if (ghost) {
   // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.

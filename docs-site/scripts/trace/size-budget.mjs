@@ -5,10 +5,10 @@
 //     dist/wasm/ (scripts/build-wasm.sh, copied from public/wasm/): ≤ 400 KB;
 //   - three.js is outside the budget, but may load only on pages that use the
 //     3-D view (a [data-vehicle-view] element). Every TracePlayer page can
-//     reach the view chunk through a dynamic import(), which player.ts makes
-//     only when the player has a view; so a page without a view must not
-//     reach three.js through static imports, and a page with one must reach
-//     it through either kind.
+//     reach the view chunk through a dynamic import() in the player's script,
+//     which player.ts makes only when the player has a view. So a page
+//     without a view must not reach three.js through any other import,
+//     static or dynamic, and a page with one must reach it through either.
 //
 // Run after `astro build` (it reads dist/). With --require-wasm, a build
 // without a WebAssembly module fails too (CI builds one).
@@ -58,8 +58,9 @@ for (const f of wasm) {
 }
 
 // three.js placement: follow each page's module scripts through their
-// imports, and flag a page without a 3-D view that loads three.js with the
-// page (static imports), or a page with one that cannot reach it at all.
+// imports, and flag a page without a 3-D view that can load three.js other
+// than through the player's guarded import, or a page with one that cannot
+// reach it at all.
 const dist = join(root, 'dist');
 if (!existsSync(dist)) {
   console.error('FAIL dist/ not found: run `npm run build` first');
@@ -73,16 +74,19 @@ function chunkInfo(path) {
     const dynamic = paths(/import\s*\(\s*["'](\.{1,2}\/[^"']+\.js)["']/g);
     const statics = paths(/(?:from|import)\s*["'](\.{1,2}\/[^"']+\.js)["']/g);
     // three.js stamps its revision into the bundle.
-    chunkCache.set(path, { three: /REVISION\s*=\s*["']\d+/.test(src) || src.includes('__THREE__'), statics, dynamic });
+    // The player's script chunk: its dynamic import of the view is guarded.
+    const guarded = basename(path).startsWith('TracePlayer.astro_astro_type_script');
+    chunkCache.set(path, { three: /REVISION\s*=\s*["']\d+/.test(src) || src.includes('__THREE__'), statics, dynamic, guarded });
   }
   return chunkCache.get(path);
 }
-function reachesThree(entry, withDynamic, seen = new Set()) {
+// withGuarded: also follow the player's guarded import of the view.
+function reachesThree(entry, withGuarded, seen = new Set()) {
   if (seen.has(entry)) return false;
   seen.add(entry);
   const info = chunkInfo(entry);
-  const next = withDynamic ? [...info.statics, ...info.dynamic] : info.statics;
-  return info.three || next.some((i) => reachesThree(i, withDynamic, seen));
+  const next = withGuarded || !info.guarded ? [...info.statics, ...info.dynamic] : info.statics;
+  return info.three || next.some((i) => reachesThree(i, withGuarded, seen));
 }
 console.log('three.js placement (only pages with a 3-D view):');
 let threePages = 0;

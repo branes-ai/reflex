@@ -15,11 +15,11 @@
 // and then 0.5, which it can reach. The wound-up integral must unwind before
 // the output leaves the limit, so the second loop takes about 2.5 s to
 // reach 0.5; the first parks its integral at the edge of saturation and
-// reaches 0.5 in under 0.1 s. (It then dips to 0.43 and settles within 2 %
-// by about 0.5 s: the PI loop's own response at k_p = 1.)
+// comes within 0.02 of 0.5 in under 0.1 s. (It then dips to 0.43 and settles
+// within 0.01 by about 0.5 s: the PI loop's own response at k_p = 1.)
 //
 // Check (BB-T1): the time from the setpoint drop until the anti-windup run
-// first enters a 2 % band around 0.5, at most 0.2 s. It is the metric and
+// first comes within 0.02 of 0.5 (4 %), at most 0.2 s. It is the metric and
 // limit of the closed-loop test "anti-windup recovers quickly from an
 // unreachable setpoint", which flies this loop.
 //
@@ -51,7 +51,7 @@ inline constexpr double kDtTrace = pt::kDt * kStepsPerSample;
 inline constexpr int kSamples = 801;  // 0 … 8 s
 inline constexpr double kUnreachable = 1.5;
 inline constexpr double kReachable = 0.5;
-inline constexpr double kBand = 0.02 * kReachable;
+inline constexpr double kBand = 0.02;  // absolute, as in the test
 
 inline trace::Trace run(const Params& p) {
     if (!(p.ki >= 1 && p.ki <= 30) || !(p.hold >= 0.5 && p.hold <= 3)) {
@@ -112,7 +112,7 @@ inline trace::Trace run(const Params& p) {
     };
     const auto label = [&](const char* run, int i) {
         char buf[96];
-        std::snprintf(buf, sizeof buf, "%s reaches 0.5 ± 2 %%, %.2f s after the drop", run, recovery(i));
+        std::snprintf(buf, sizeof buf, "%s within 0.02 of 0.5, %.2f s after the drop", run, recovery(i));
         return std::string(buf);
     };
     tr.event(0, "setpoint 1.5, beyond the actuator's reach");
@@ -124,7 +124,7 @@ inline trace::Trace run(const Params& p) {
         }
     }
     tr.check({.id = "BB-T1",
-              .metric = "recovery_time_to_2pct_band",
+              .metric = "recovery_time_to_within_0.02",
               .unit = "s",
               .value = recovery(0),
               .limit = 0.2,

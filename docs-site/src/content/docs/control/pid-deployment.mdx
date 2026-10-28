@@ -138,8 +138,11 @@ for a clean measurement or no D term.
   the `dt` it is given, so pass the time since the last call, not the
   nominal period.
 - **A non-positive dt is a fault.** `update()` returns the last output and
-  leaves its state alone. A duplicated tick or a clock that steps back is
-  then harmless.
+  leaves its state alone, including the measurement of the last accepted
+  call. The next call must then pass the time since that
+  accepted call, not since the rejected one, or the derivative divides by
+  too short an interval and spikes. Take `dt` from a monotonic clock, and
+  after a clock discontinuity, `reset()` rather than guess an interval.
 - **A long dt is accepted.** After a missed deadline, the integral takes the
   whole gap in one step. The controller cannot tell a late tick from a slow
   loop, so detect overruns in the scheduler. The
@@ -158,9 +161,13 @@ for a clean measurement or no D term.
 - **Reset on arming and on a mode switch.** `reset()` zeroes the integral
   and the rate, and unprimes the derivative, so the first update after it
   has no derivative term.
-- **No bumpless transfer.** After `reset()`, the output starts from the P
-  term and a zero integral. A loop taking over from another, at a nonzero
-  command, steps at the switch. Pid has no way to preload its integral.
+- **No bumpless transfer.** `reset()` sets the integral to zero, or to the
+  nearer integral bound when zero is outside them. The first update after
+  it integrates before it computes its output, so that output is the P
+  term plus one step of integration, $K_i e\,\Delta t$, plus the reset
+  integral. With $K_p = 1$, $K_i = 10$, $e = 0.5$, and $\Delta t$ = 0.1 s
+  that is 0.5 + 0.5 = 1. A loop taking over from another at a nonzero
+  command steps at the switch, and Pid has no way to preload its integral.
 
 ## Scalar types
 

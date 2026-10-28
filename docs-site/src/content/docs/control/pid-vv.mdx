@@ -31,10 +31,10 @@ Assessment on 2026-10-27, against commit `95c5a21`.
 |---|---|---|
 | S1 spec | ✅ | Control law, data model, I1–I4, and pre/postconditions on every operation in `pid.hpp` |
 | S2 envelope | ◐ | The non-goals are implicit: no setpoint weighting, feed-forward, gain scheduling, or bumpless transfer. Not written down as an envelope |
-| S3 parameters | ✅ | `pid_config_valid` rejects each violation (tested); units on every field. The defaults are a neutral normalized command, not tuned gains; tuned gains come from `cascade_config_from()`, traced to RP-1 |
+| S3 parameters | ✅ | `pid_config_valid` rejects each violation; units on every field. The defaults are a neutral normalized command, not tuned gains; tuned gains come from `cascade_config_from()`, traced to RP-1 |
 | S4 scalar types | ◐ | The control law and a closed loop run in double, float, `posit<32,2>`, `posit<16,1>`, and `cfloat<32,8>`, with tolerances by precision (`tests/sdk/pid.cpp`). The minimum precision is not stated |
 | S5 resource | ◐ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. The operation count is not tested directly, only inside the cascade's rate tick (`tests/sdk/cascade_resource.cpp`) |
-| T1 unit | ✅ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault, the validator; three closed-loop tests |
+| T1 unit | ◐ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault; three closed-loop tests. The validator's tests cover a negative k_p, both limit pairs, and a negative τ, but not a negative k_i or k_d |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
 | T4 properties | ❌ | — |
@@ -56,8 +56,9 @@ Assessment on 2026-10-27, against commit `95c5a21`.
 | R4 | ◐ | The committed traces pin six scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
 | R2, R3 | ❌ | — |
 
-**Grade today: not yet C.** Every C requirement is met except S5's test.
-M1 adds it and reaches C.
+**Grade today: not yet C.** Two C requirements are short by a test each:
+S5's operation count, and T1's validator cases for a negative k_i and k_d.
+M1 adds both and reaches C.
 
 ## Animations
 
@@ -95,7 +96,7 @@ copy whose limits are set wide open, so that its anti-windup never engages.
 <TracePlayer
   trace={windup}
   title="Does the loop recover at once when the setpoint comes back within reach?"
-  description="Two copies of T·x' = −x + u (T = 0.1 s), with the actuator saturating at |u| ≤ 1, under PI control (k_p = 1, k_i = 10). The setpoint is 1.5, beyond reach, for 2 s, and then 0.5. The run with anti-windup parks its integral at 0.49 and reaches 0.5 (within 2 %) 0.09 s after the drop. The run without it winds its integral up to 11, and needs 2.49 s. Pass criterion, as in the test: the anti-windup run first enters the 2 % band around 0.5 at most 0.2 s after the drop. The criterion measures recovery from saturation, not settling: the anti-windup run then dips to 0.43, the PI loop's own undershoot, and stays within 2 % from 0.5 s."
+  description="Two copies of T·x' = −x + u (T = 0.1 s), with the actuator saturating at |u| ≤ 1, under PI control (k_p = 1, k_i = 10). The setpoint is 1.5, beyond reach, for 2 s, and then 0.5. The run with anti-windup parks its integral at 0.49 and comes within 0.02 of 0.5 0.09 s after the drop. The run without it winds its integral up to 11, and needs 2.40 s. Pass criterion, as in the test: the anti-windup run first comes within 0.02 (4 %) of 0.5 at most 0.2 s after the drop. The criterion measures recovery from saturation, not settling: the anti-windup run then dips to 0.43, the PI loop's own undershoot, and stays within 0.01 from 0.5 s."
   plots={[
     { channel: 'response', title: 'Plant output', labels: ['anti-windup', 'no anti-windup'], colors: [1, 2],
       series: [{ channel: 'setpoint', label: 'setpoint', color: 4, dashed: true }] },
@@ -112,7 +113,7 @@ copy whose limits are set wide open, so that its anti-windup never engages.
 | Anti-windup freezes the integral only while it would wind up | Both directions, own and external saturation | `tests/sdk/pid`, `tests/sdk/cascade` | PR |
 | A non-positive dt holds the output and state | Contract case; trace replay | `tests/sdk/pid`, `pid/timing_fault` | PR |
 | Zero steady-state error and bounded overshoot in closed loop | First-order plant, double integrator with offset | `tests/sdk/pid_closed_loop` | PR |
-| Recovery from saturation within 0.2 s | Closed-loop test; trace check | `tests/sdk/pid_closed_loop`, `pid/windup` | PR |
+| Recovery from saturation within 0.2 s, to within 0.02 | Closed-loop test; trace check | `tests/sdk/pid_closed_loop`, `pid/windup` | PR |
 | Same law across scalar types | Closed loop within 1e-5 (32-bit types) and 1e-2 (`posit<16,1>`) of double | `tests/sdk/pid` | PR |
 | The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
 | The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
@@ -125,14 +126,14 @@ The last two rows are planned.
 
 | # | PR scope | Requirements | Grade after |
 |---|---|---|---|
-| M1 | `tests/sdk/pid_resource.cpp`: operation count per update with `Counted<double>`, for each combination of the filter switch and the primed flag | S5 | **C** |
+| M1 | `tests/sdk/pid_resource.cpp`: operation count per update with `Counted<double>`, for each combination of the filter switch and the primed flag; validator cases for a negative k_i and k_d | S5, T1 | **C** |
 | M2 | Envelope and non-goals in the header; minimum precision stated; metamorphic tests; closed-loop offsets against closed form in the test suite; sanitizer preset | S2, S4, V1, V4, T3 | — |
 | M3 | Property tests: for generated configurations, inputs, and dt, I2–I4 and the output bound hold; golden traces in `tests/` | T4, R4 | **B** |
 | M4 | Fuzz target for `update()`; coverage report; comparison with PX4's PID library on shared scenarios | T5, T6, V6 | B |
 | M5 | Datasheet: step and frequency response of the filtered derivative, numeric-type error budget, cost per type and compiler; scenario runner and monitor | C1–C4, D1–D3 | B |
 | M6 | Pid in the `sim/` scenario suite through the cascade | BB-I1, BB-I2, BB-I4 | **A** |
 
-M1 is one small test, and gives Pid the grade the cascade built from it
+M1 is two small tests, and gives Pid the grade the cascade built from it
 already has. M2 and M3 reach B. M6 shares the `sim/` harness with the
 [quadrotor model's M9](/model/quadrotor-vv/#milestones), so the two land
 together.

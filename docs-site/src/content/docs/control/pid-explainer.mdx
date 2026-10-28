@@ -64,8 +64,9 @@ place. The next two terms fix one each.
 The D term pushes against the vehicle's speed, like a shock absorber. Pid
 takes the rate of the *measurement*, $-K_d\,\dot z$, rather than of the
 error. While the setpoint is constant the two are equal, but a jump in the
-setpoint does not make the command jump. This is called derivative on
-measurement.
+setpoint does not make the D term jump. The command still jumps, through
+the P term, but without a derivative kick on top. This is called
+derivative on measurement.
 
 *Before you play:* with damping, the height settles. Where?
 
@@ -96,7 +97,7 @@ P term had to hold up with an error.
 <TracePlayer
   trace={terms}
   live="pid_terms"
-  prompt="set k_d to 0. What happens to the PID run? Then set k_d back to 8 and make k_i large, say 30. For a loop like this one, the rule is that k_d·k_p must exceed k_i."
+  prompt="set k_d to 0. What happens to the PID run? Then set k_d back to 8 and make k_i large, say 30. For the ideal continuous loop, the rule is that k_d·k_p must exceed k_i."
   title="How does the integral remove the offset?"
   description="The same start, with the full PID (k_i = 8 /s³). At first the PID run follows the PD run, and then the integral pulls it on up to the setpoint. It overshoots by 6 %, then settles: within 2 % of the setpoint after 4.1 s, and within 0.3 mm at 10 s. The integral rises to the 3 m/s² the extra weight takes (dashed) and stays there. The P term then contributes nothing, because the error is zero."
   plots={[
@@ -109,9 +110,12 @@ P term had to hold up with an error.
 />
 
 The integral makes the loop slower to settle and adds overshoot, the price
-of removing the offset. It is also what can make the loop unstable. The
+of removing the offset. It is also what can make the loop unstable. For
+the ideal loop, continuous and with no derivative filter, the
 characteristic polynomial is $s^3 + K_d s^2 + K_p s + K_i$, which is stable
-only while $K_d K_p > K_i$. With $K_d = 0$ the PID run swings wider and
+only while $K_d K_p > K_i$. The widget's loop runs at 1 kHz with a 5 ms
+filter, which moves that boundary a little, so treat the rule as a guide
+near its edge. With $K_d = 0$ the PID run swings wider and
 wider. At $K_i = 30$ with $K_d = 1$ it swings too, between −0.9 and 2.2 m,
 with its command hitting the ±20 m/s² limit, while the PD run settles. The
 checks under the player then fail, which is the point: the gains are
@@ -178,7 +182,7 @@ and then 0.5. How long does each run take to get to 0.5?
   live="pid_windup"
   prompt="make the hold time longer. Does the anti-windup run take longer to recover? Does the other one?"
   title="Why does a saturated integral make the loop slow to recover?"
-  description="Both runs climb to x = 1, the most the actuator can hold, and sit there. The run without anti-windup keeps integrating the 0.5 error, and its integral reaches 11 by 2 s. Its command, far past the actuator's limit of 1 (dashed), means nothing to the plant. The anti-windup run's integral stops at 0.49, where P and I together just reach the limit. At 2 s the setpoint drops to 0.5. The anti-windup run's command leaves the limit at once, and the output reaches 0.5 (within 2 %) after 0.09 s. It dips to 0.43 and is back within 2 % by 0.5 s: that is the PI loop's own response, with its low k_p. The other run's command has to unwind from 11.5 to below 1 first, so it stays at the limit and reaches 0.5 only after 2.49 s."
+  description="Both runs climb to x = 1, the most the actuator can hold, and sit there. The run without anti-windup keeps integrating the 0.5 error, and its integral reaches 11 by 2 s. Its command, far past the actuator's limit of 1 (dashed), means nothing to the plant. The anti-windup run's integral stops at 0.49, where P and I together just reach the limit. At 2 s the setpoint drops to 0.5. The anti-windup run's command leaves the limit at once, and the output comes within 0.02 of 0.5 after 0.09 s. It dips to 0.43 and is within 0.01 for good by 0.5 s: that is the PI loop's own response, with its low k_p. The other run's command has to unwind from 11.5 to below 1 first, so it stays at the limit and comes within 0.02 of 0.5 only after 2.40 s."
   plots={[
     { channel: 'response', title: 'Plant output', labels: ['anti-windup', 'no anti-windup'], colors: [1, 2],
       series: [{ channel: 'setpoint', label: 'setpoint', color: 4, dashed: true }] },
@@ -193,9 +197,9 @@ and then 0.5. How long does each run take to get to 0.5?
 
 The wound-up integral grows with the time spent at the limit, and so does
 the recovery: about 1 s after a 0.5 s hold, and 3.5 s after a 3 s hold. The
-anti-windup run reaches 0.5 in 0.09 s whatever the hold. The check under
-the player is the closed-loop test's criterion: reaching the 2 % band
-within 0.2 s of the drop.
+anti-windup run comes within 0.02 of 0.5 in 0.09 s whatever the hold. The
+check under the player is the closed-loop test's criterion: within 0.02 of
+0.5 no later than 0.2 s after the drop.
 
 A stage after the controller can also cut its command, as the
 [mixer](/control/mixer/) does when it runs out of authority. Pid then

@@ -8,10 +8,10 @@ import timingFault from '../../../traces/pid/timing_fault.json';
 
 `#include <branes/reflex/control/pid.hpp>`
 
-**Grade: not yet C**, one test short under the
+**Grade: not yet C**, two tests short under the
 [building block standard](/standards/building-blocks/): the resource
-contract (BB-S5) is stated, but its operation count is not tested
-directly. The [V&V plan](/control/pid-vv/) has the
+contract's operation count (BB-S5), and validator cases for a negative
+k_i and k_d (BB-T1). The [V&V plan](/control/pid-vv/) has the
 assessment and the path to A.
 
 This is the developer guide: the control law, contracts, and API. The
@@ -124,6 +124,16 @@ scheduler produces.
 The controller cannot tell a late tick from a slow loop. A gap like the one
 at 100 ms is the scheduler's to detect: an overrun counter, or a watchdog
 that resets the controller when the gap is longer than the loop tolerates.
+
+A rejected call also leaves a debt. The controller keeps the measurement
+of the last call it accepted, so the next `dt` must be the time since
+*that* call. A scheduler that measures `dt` from the rejected call passes
+too short an interval: the derivative divides the change since the last
+accepted sample by part of the time it took, and spikes, and the integral
+misses the difference. The replay's scheduler makes that mistake. The tick
+after each fault passes 1 ms, although 2 ms have passed since the last
+accepted call. With no D term here, the only cost is 1 ms of integration;
+with one, the measured rate would double for that tick.
 
 ## Scalar types
 

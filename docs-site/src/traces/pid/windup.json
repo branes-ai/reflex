@@ -1,7 +1,7 @@
 {
   "schema": "reflex-trace/1",
   "provenance": {
-    "commit": "8793f2f", "block": "control/pid",
+    "commit": "f19159a", "block": "control/pid",
     "scenario": "tools/trace/scenarios/pid/windup.hpp", "seed": 0,
     "compiler": "gcc 15.2 optimized", "dt_sim": 0.001, "dt_trace": 0.01
   },
@@ -4028,10 +4028,10 @@
   "events": [
     { "t": 0, "label": "setpoint 1.5, beyond the actuator's reach" },
     { "t": 2, "label": "setpoint 0.5, within reach" },
-    { "t": 2.093, "label": "anti-windup: reaches 0.5 ± 2 %, 0.09 s after the drop" },
-    { "t": 4.486, "label": "no anti-windup: reaches 0.5 ± 2 %, 2.49 s after the drop" }
+    { "t": 2.088, "label": "anti-windup: within 0.02 of 0.5, 0.09 s after the drop" },
+    { "t": 4.4030000000000005, "label": "no anti-windup: within 0.02 of 0.5, 2.40 s after the drop" }
   ],
   "checks": [
-    { "id": "BB-T1", "metric": "recovery_time_to_2pct_band", "unit": "s", "value": 0.093, "limit": 0.2, "comparison": "<=", "pass": true }
+    { "id": "BB-T1", "metric": "recovery_time_to_within_0.02", "unit": "s", "value": 0.088, "limit": 0.2, "comparison": "<=", "pass": true }
   ]
 }

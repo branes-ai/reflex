@@ -28,7 +28,7 @@ velocity loops, and `to_rotor_command()` to the ESCs.
 
 ## Where it stands
 
-Assessment on 2026-10-27, against commit `fa5115f`.
+Assessment on 2026-10-28, against commit `e9f3eab`.
 
 | Req | Status | Evidence today / gap |
 |---|---|---|
@@ -36,7 +36,7 @@ Assessment on 2026-10-27, against commit `fa5115f`.
 | S2 envelope | ◐ | The non-goals are stated (arming and idle, battery sag) but scattered. Quad X only, and one fixed priority, are not written down as an envelope |
 | S3 parameters | ✅ | `mixer_params_valid` rejects a zero arm, a NaN coefficient, a negative T_min, and T_min = T_max (`tests/sdk/mixer.cpp`); units on every field; `mixer_params_from()` derives them from the vehicle |
 | S4 scalar types | ◐ | Every test runs in double and float. No posit or cfloat; the minimum precision is not stated |
-| S5 resource | ◐ | No allocation and constant time, stated in the header; a fixed loop of four. The operation count is not tested, and `allocate()`, `wrench()`, and `mix()` are not `noexcept` |
+| S5 resource | ◐ | No allocation, no exceptions, and constant time, stated in the header. `mix()` runs 47 operations, +1 when roll and pitch scale, +1 for a yaw demand, and +2 for each rounding guard of the clamp, at most 53, with no calls, over 4000 generated demands that reach every stage of the priority and the guard; `allocate()` 14, `wrench()` 15, `to_rotor_command()` 4 and four square roots (`tests/sdk/mixer_resource.cpp`). `allocate()`, `wrench()`, and `mix()` are not marked `noexcept` |
 | T1 unit | ✅ | The round trip, the geometry's signs, the identity inside the limits, each corner of the priority, yaw that relieves a saturation, a postcondition sweep over 800 demands with T_min > 0, continuity across the boundary, the rotor commands, and the saturation report (`tests/sdk/cascade.cpp`) |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
@@ -51,7 +51,7 @@ Assessment on 2026-10-27, against commit `fa5115f`.
 | V5 derivatives | N/A | No consumer linearizes the mixer |
 | V6 code-to-code | ❌ | No comparison with PX4's or Betaflight's airmode mixer |
 | V7 stability | N/A | No dynamics |
-| C1–C5 | ❌ | No benchmark |
+| C1–C5 | ◐ | `bench/mixer_bench` gives ns per `mix()` and `allocate()` call on x86; nothing else |
 | D1–D3 | ◐ | Three trace scenarios in `tools/trace/scenarios/mixer/`, regenerated and compared in CI (ANI-3); no scenario runner, monitor, or MCAP |
 | L1–L5 | N/A | The mixer has no physical counterpart apart from the rotors, which the model covers |
 | BB-I1–I6 | ◐ | The cascade's closed-loop tests fly through the mixer on the quadrotor model; the clip comparison below is a trace scenario, not a test. No `sim/` harness |
@@ -59,8 +59,11 @@ Assessment on 2026-10-27, against commit `fa5115f`.
 | R4 | ◐ | The committed traces pin three scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
 | R2, R3 | ❌ | — |
 
-**Grade today: not yet C.** S1, S3, T1, and T2 are met. S5 lacks the
-operation-count test, and there is no benchmark. M1 adds both and reaches C.
+**Grade today: C.** S1, S3, T1, and T2 are met, with `bench/mixer_bench`
+as the benchmark. S5's structural part is met, as for the
+[quadrotor model](/model/quadrotor-vv/): the operation count is tested and
+the header states that no operation allocates or throws. Marking the
+operations `noexcept`, in M2, completes it.
 
 ## Animations
 
@@ -137,24 +140,23 @@ throttle with a tilt and a yaw demanded at once.
 | The report flags each cut in the demand's direction | One case per channel and direction | `tests/sdk/cascade` | PR |
 | The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
 | The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
-| A bounded operation count per call | Counted-type test (M1) | `tests/sdk/mixer_resource` | PR |
-| The cost per call | Benchmark (M1) | `bench/mixer_bench` | — |
+| A bounded operation count per call | Counted-type test over generated demands | `tests/sdk/mixer_resource` | PR |
+| The cost per call | Benchmark | `bench/mixer_bench` | — |
 | Mirror and sign relations hold | Metamorphic tests (M2) | `tests/verification/mixer_metamorphic` | PR |
 
-The last three rows are planned.
+The last row is planned.
 
 ## Milestones
 
 | # | PR scope | Requirements | Grade after |
 |---|---|---|---|
-| M1 | `tests/sdk/mixer_resource.cpp`: the operation count of `mix()` with `Counted`, bounded over generated demands; `bench/mixer_bench.cpp`: `mix()` and `allocate()` per call, double and float; `noexcept` on the operations that cannot throw | S5, C | **C** |
-| M2 | Envelope and non-goals in the header; posit and cfloat runs, and the minimum precision; postconditions asserted after `mix()` in Debug builds; metamorphic tests; sanitizer preset | S2, S4, V3, V4, T3 | — |
+| M1 ✅ | `tests/sdk/mixer_resource.cpp`: the operation count of every operation with `Counted`, bounded over generated demands; `bench/mixer_bench.cpp`: `mix()` and `allocate()` per call, double and float | S5, C | **C** |
+| M2 | `noexcept` on `allocate()`, `wrench()`, and `mix()`; envelope and non-goals in the header; posit and cfloat runs, and the minimum precision; postconditions asserted after `mix()` in Debug builds; metamorphic tests; sanitizer preset | S2, S4, V3, V4, T3 | — |
 | M3 | Property tests: for generated parameters and demands, the postconditions and continuity; golden traces in `tests/` | T4, R4 | **B** |
 | M4 | Fuzz target for `mix()`; coverage report; comparison with PX4's airmode mixer on shared demands | T5, T6, V6 | B |
 | M5 | Datasheet: the attainable torque set against the collective, the cost per type and compiler, the clip comparison across the throttle range; scenario runner and monitor | C1–C4, D1–D3 | B |
 | M6 | The mixer in the `sim/` scenario suite through the cascade | BB-I1, BB-I2, BB-I4 | **A** |
 
-M1 is a test, a benchmark, and a header annotation, and gives the mixer
-the grade the cascade built on it already has. M6 shares the `sim/` harness
+M1 gave the mixer the grade the cascade built on it already has. M6 shares the `sim/` harness
 with the [PID's M6](/control/pid-vv/#milestones) and the
 [quadrotor model's M9](/model/quadrotor-vv/#milestones).

@@ -130,10 +130,15 @@ response.
 
 ## Cost
 
-Not yet measured. A `mix()` call is a fixed sequence of arithmetic and
-comparisons, with no loop beyond the four rotors, and `to_rotor_command()`
-adds four square roots. The benchmark and the
-operation-count test are milestone M1 of the [V&V plan](/control/mixer-vv/).
+About 17 ns per `mix()` call and 3 ns per `allocate()` on x86, for float
+and double alike (`bench/mixer_bench`, GCC 15.2 Release, i7-12700K), over
+demands that sweep the throttle range and take every stage of the priority.
+The operation count is bounded, with no calls
+(`tests/sdk/mixer_resource.cpp`): `mix()` runs 47 arithmetic operations,
+one more when roll and pitch scale and one more for a yaw demand, and two
+more for each time rounding leaves one of its intervals empty, at most 53.
+`allocate()` runs 14, and `to_rotor_command()` 4 divisions and four square
+roots. Measure on the flight processor before budgeting.
 
 ## Scalar types
 
@@ -149,5 +154,5 @@ and the constructor, `sqrt`.
 | Postconditions | Every thrust within [T_min, T_max]; the achieved torque is (στx, στy, sτz) with σ ∈ (0, 1], s ∈ [0, 1]; a demand that fits comes back unchanged |
 | Faults | None reported: a precondition violation is an `assert` in Debug builds |
 | State | None: the mixer holds only its parameters and values derived from them |
-| Resources | No allocation; constant time; `saturation_from()` is `noexcept` |
+| Resources | No allocation; at most 53 arithmetic operations per `mix()`, with no calls; `saturation_from()` is `noexcept` |
 | Not provided | Arming and idle, frames other than Quad X, battery compensation, motor-lag compensation, a configurable priority |

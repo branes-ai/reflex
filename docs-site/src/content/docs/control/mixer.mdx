@@ -8,9 +8,8 @@ import throttleSweep from '../../../traces/mixer/throttle_sweep.json';
 
 `#include <branes/reflex/control/mixer.hpp>`
 
-**Grade: not yet C**, under the
-[building block standard](/standards/building-blocks/). Two C requirements
-are short: no test of the operation count (BB-S5), and no benchmark. The
+**Grade: C**, under the
+[building block standard](/standards/building-blocks/). The
 [V&V plan](/control/mixer-vv/) has the assessment and the path to A.
 
 This is the developer guide: the allocation, the priority, the saturation
@@ -119,7 +118,9 @@ The cascade passes the report to its PID integrators, through
 | `saturation_from(w, out)` | The report above. `noexcept` |
 
 Every operation is a pure, constant-time function that never allocates.
-Preconditions are checked with `assert` in Debug builds.
+`mix()` runs at most 53 arithmetic operations and no calls
+(`tests/sdk/mixer_resource.cpp`). Preconditions are checked with `assert`
+in Debug builds.
 
 ## Usage
 

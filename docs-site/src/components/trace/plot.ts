@@ -223,6 +223,10 @@ export interface BarsReadout {
   hi: number;
   decimals: number;
   unit: string;
+  /** Text for the accessible readout: the panel title, each bar's label, and each series' legend label. */
+  title: string;
+  labels: string[];
+  names: { main: string; compare?: string; marker?: string; limits?: string };
 }
 
 /** Bar y and height, from the baseline (0, or the bottom of the range) to v. */
@@ -309,6 +313,9 @@ function renderBars(trace: Trace, spec: BarsSpec) {
     hi,
     decimals: readoutDecimals(yt.step),
     unit: unit === '1' ? '' : unit,
+    title: spec.title,
+    labels: spec.labels,
+    names: { main: spec.label, compare: spec.compare?.label, marker: spec.marker?.label, limits: spec.limits?.label },
   };
   return {
     title,

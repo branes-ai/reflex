@@ -89,6 +89,7 @@ function attach(root: HTMLElement) {
     svg: el.querySelector<SVGSVGElement>('svg')!,
     cursor: el.querySelector<SVGLineElement>('.tp-cursor'),
     values: [...el.querySelectorAll<HTMLElement>('[data-readout]')],
+    text: el.querySelector<HTMLElement>('[data-bars-text]'),
     readout: config.panels[i],
   }));
   const parts = {
@@ -124,7 +125,7 @@ function attach(root: HTMLElement) {
     scrub.setAttribute('aria-valuetext', label);
     for (const p of panels) {
       if (p.readout.bars) {
-        showBars(p.svg, trace, index, p.readout.bars);
+        showBars(p.svg, p.text, trace, index, p.readout.bars);
         continue;
       }
       const x0 = Number(p.svg.dataset.x0);
@@ -315,7 +316,10 @@ function attach(root: HTMLElement) {
 }
 
 /** Moves a bar panel's bars, outlines, limit lines, and value labels to sample k. */
-function showBars(svg: SVGSVGElement, trace: Trace, k: number, b: BarsReadout) {
+// The SVG is aria-hidden, so the values also go, as text, into a visually
+// hidden element that a screen reader can read on demand (not aria-live: it
+// changes every frame during playback).
+function showBars(svg: SVGSVGElement, text: HTMLElement | null, trace: Trace, k: number, b: BarsReadout) {
   const row = (name?: string) => (name ? (trace.channels[name][k] as number[]) : undefined);
   const set = (el: Element | null, v: number) => {
     if (!el) return;
@@ -344,6 +348,15 @@ function showBars(svg: SVGSVGElement, trace: Trace, k: number, b: BarsReadout) {
     line?.setAttribute('y1', y);
     line?.setAttribute('y2', y);
   });
+  if (text) {
+    const unit = b.unit ? ` ${b.unit}` : '';
+    const series = (name: string | undefined, values: number[] | undefined, i: number) =>
+      name && values ? `, ${name} ${fmt(values[i])}${unit}` : '';
+    const items = main.map((v, i) =>
+      `${b.labels[i]}: ${b.names.main} ${fmt(v)}${unit}${series(b.names.compare, compare, i)}${series(b.names.marker, marker, i)}`);
+    const range = limits && b.names.limits ? ` ${b.names.limits}: ${limits.map((v) => `${fmt(v)}${unit}`).join(', ')}.` : '';
+    text.textContent = `${b.title} at t = ${trace.t[k].toFixed(3)} s. ${items.join('; ')}.${range}`;
+  }
 }
 
 /** The sliders of a live widget: each change reruns the scenario in WebAssembly. */

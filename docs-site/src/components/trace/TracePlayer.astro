@@ -148,6 +148,7 @@ const config = {
             </span>
           </div>
           <div class="tp-svg" data-svg set:html={panel.svg} />
+          {panel.readout.bars && <p class="tp-sr" data-bars-text></p>}
         </div>
       ))}
     </div>
@@ -259,6 +260,7 @@ const config = {
   .trace-player .tp-panel-legend { display: flex; flex-wrap: wrap; gap: 0.1rem 0.75rem; color: var(--tp-ink2); }
   .trace-player .tp-key { white-space: nowrap; }
   .trace-player .tp-muted { color: var(--tp-muted); }
+  .trace-player .tp-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .trace-player .tp-value { color: var(--tp-ink); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
   .trace-player .tp-swatch { display: inline-block; width: 0.75rem; height: 3px; border-radius: 1.5px; vertical-align: middle; margin-right: 0.3rem; }
   .trace-player .k-1 { --k: var(--tp-s1); } .trace-player .k-2 { --k: var(--tp-s2); }

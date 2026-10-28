@@ -9,10 +9,10 @@ const ATOL = 1e-9;
 const ATOL_ROTOR_SPEEDS = 1e-6;
 const CHECK_TOL = 1e-9;
 
-/** Profiles: which parts are compared. */
+/** Profiles: which parts are compared. `wasm` compares what `regen` does (docs/standards/animation). */
 export const PROFILES = {
   regen: { allChannels: true, events: true, checks: true, identity: true },
-  wasm: { allChannels: false, events: false, checks: false, identity: false },
+  wasm: { allChannels: true, events: true, checks: true, identity: true },
 };
 
 // Fields that say what a trace is; they must match exactly under `regen`

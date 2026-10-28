@@ -1,0 +1,138 @@
+---
+title: PID V&V Plan
+description: Where Pid stands against the building block standard, the animations that illustrate its checks, the evidence ledger, and the milestones that take it to grade A.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import terms from '../../../traces/pid/terms.json';
+import windup from '../../../traces/pid/windup.json';
+
+This plan takes [`Pid`](/control/pid/) to grade **A** under the
+[building block standard](/standards/building-blocks/). It lists where the
+controller stands against each requirement, the animations that illustrate
+its checks, the evidence ledger, and a sequence of PRs.
+
+**Scope.** Pid is a discrete algorithm: its control law *is* its
+specification, so there is no continuous model whose discretization it has
+to converge to. Verification checks that it computes that law, holds its
+invariants, and behaves as its contracts say in closed loop. Whether its
+gains suit a vehicle is the business of the loops built from it, the
+[cascade](/control/cascade/) above all, and their V&V.
+
+**Consumers.** The cascade's rate loop (three Pids at 1 kHz, output in
+rad/s²) and its velocity loop (three Pids, output in m/s²), in
+racing-drone's B0 baseline.
+
+## Where it stands
+
+Assessment on 2026-10-27, against commit `95c5a21`.
+
+| Req | Status | Evidence today / gap |
+|---|---|---|
+| S1 spec | ✅ | Control law, data model, I1–I4, and pre/postconditions on every operation in `pid.hpp` |
+| S2 envelope | ◐ | The non-goals are implicit: no setpoint weighting, feed-forward, gain scheduling, or bumpless transfer. Not written down as an envelope |
+| S3 parameters | ✅ | `pid_config_valid` rejects each violation (tested); units on every field. The defaults are a neutral normalized command, not tuned gains; tuned gains come from `cascade_config_from()`, traced to RP-1 |
+| S4 scalar types | ◐ | The control law and a closed loop run in double, float, `posit<32,2>`, `posit<16,1>`, and `cfloat<32,8>`, with tolerances by precision (`tests/sdk/pid.cpp`). The minimum precision is not stated |
+| S5 resource | ◐ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. The operation count is not tested directly, only inside the cascade's rate tick (`tests/sdk/cascade_resource.cpp`) |
+| T1 unit | ✅ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault, the validator; three closed-loop tests |
+| T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
+| T3 sanitizers | ❌ | No sanitizer preset |
+| T4 properties | ❌ | — |
+| T5 fuzzing | ❌ | — |
+| T6 coverage | ❌ | Not measured |
+| T7 mutation | ❌ | — |
+| V1 analytic | ◐ | The P and I terms, the filter's first step and its steady state, by closed form. Closed-loop offsets checked against closed form only in the trace scenarios (below), not in the test suite |
+| V2 order | N/A | No discretization of a continuous law: the discrete law is the specification |
+| V3 structure | ✅ | The invariants I2–I4 (the integral and the output within their bounds, an unprimed rate of zero) are asserted after every update in Debug builds |
+| V4 metamorphic | ❌ | Sign symmetry (negating the setpoint and the measurement negates the output, with symmetric limits) and gain scaling are not tested |
+| V5 derivatives | N/A | No consumer linearizes Pid |
+| V6 code-to-code | ❌ | No comparison with an independent PID, such as PX4's PID library |
+| V7 stability | N/A | The contract has no stability bound; loop stability belongs to the loops built from Pid |
+| C1–C5 | ◐ | `bench/pid_bench` gives ns per update on x86; nothing else |
+| D1–D3 | ◐ | Six trace scenarios in `tools/trace/scenarios/pid/`, regenerated and compared in CI (ANI-3); no scenario runner, monitor, or MCAP |
+| L1–L5 | N/A | Pid has no physical counterpart. The closed-loop validation of its gains is the cascade's (BB-I3) |
+| BB-I1–I6 | ◐ | Closed-loop tests on simple plants, and the cascade's closed-loop tests on the quadrotor model. No `sim/` harness |
+| R1 | ✅ | release-please semver |
+| R4 | ◐ | The committed traces pin six scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
+| R2, R3 | ❌ | — |
+
+**Grade today: not yet C.** Every C requirement is met except S5's test.
+M1 adds it and reaches C.
+
+## Animations
+
+These animations illustrate two of the requirements above. Each plays a
+trace from a scenario in `tools/trace/scenarios/pid/`, and each scenario
+computes the check shown under its player. They are not the evidence for
+the requirement (ANI-4): the tests are, and the status table follows them.
+
+### Closed-form offset (BB-V1)
+
+A PD loop on $\ddot z = u + d$ settles where the P term holds up the
+offset: $e = -d/K_p$, so $z = r + d/K_p$. The P-only loop oscillates about
+the same point, undamped.
+
+<TracePlayer
+  trace={terms}
+  title="Does the PD loop settle at the closed-form offset?"
+  description="Three copies of a height loop, z'' = u + d with d = −3 m/s², fly from 0 to a 1 m setpoint at 1 kHz for 10 s: P (k_p = 16), PD (k_d = 8), and PID (k_i = 8). The P run swings about 0.8125 m and never settles. The PD run settles on 0.8125 m = r + d/k_p (dashed) within about 2 s. The PID run's integral removes the offset. Pass criteria: the PD height at 10 s within 1 mm of r + d/k_p (BB-V1), and the PID height within 1 mm of the setpoint (BB-T1, the tolerance of the closed-loop test on this plant). The PD height lands within 10⁻¹³ m: the loop's slowest mode has decayed to roundoff."
+  plots={[
+    { channel: 'height', title: 'Height', labels: ['P', 'PD', 'PID'], colors: [1, 2, 3],
+      series: [{ channel: 'pd_offset_prediction', label: 'r + d/k_p', color: 4, dashed: true }] },
+    { channel: 'height', title: 'Height near the offset (zoomed)', components: [1], labels: ['PD'], colors: [2],
+      yRange: [0.80, 0.82],
+      series: [{ channel: 'pd_offset_prediction', label: 'r + d/k_p', color: 4, dashed: true }] },
+  ]}
+/>
+
+### Anti-windup recovery (BB-T1)
+
+The closed-loop test `anti-windup recovers quickly from an unreachable
+setpoint` holds a first-order plant at its actuator limit for 2 s and then
+asks for a reachable setpoint. The scenario flies the same loop, beside a
+copy whose limits are set wide open, so that its anti-windup never engages.
+
+<TracePlayer
+  trace={windup}
+  title="Does the loop recover at once when the setpoint comes back within reach?"
+  description="Two copies of T·x' = −x + u (T = 0.1 s), with the actuator saturating at |u| ≤ 1, under PI control (k_p = 1, k_i = 10). The setpoint is 1.5, beyond reach, for 2 s, and then 0.5. The run with anti-windup parks its integral at 0.49 and reaches 0.5 (within 2 %) 0.09 s after the drop. The run without it winds its integral up to 11, and needs 2.49 s. Pass criterion, as in the test: the anti-windup run first enters the 2 % band around 0.5 at most 0.2 s after the drop. The criterion measures recovery from saturation, not settling: the anti-windup run then dips to 0.43, the PI loop's own undershoot, and stays within 2 % from 0.5 s."
+  plots={[
+    { channel: 'response', title: 'Plant output', labels: ['anti-windup', 'no anti-windup'], colors: [1, 2],
+      series: [{ channel: 'setpoint', label: 'setpoint', color: 4, dashed: true }] },
+    { channel: 'integral', title: 'Integral term', labels: ['anti-windup', 'no anti-windup'], colors: [1, 2] },
+  ]}
+/>
+
+## Evidence ledger
+
+| Claim | Evidence | Harness | Gate |
+|---|---|---|---|
+| Each term computes its part of the law | P, I, D, and filter cases with closed-form values | `tests/sdk/pid` | PR |
+| The output and the integral stay within their limits | Saturation and clamp cases; I2–I4 asserted after every update | `tests/sdk/pid` | PR |
+| Anti-windup freezes the integral only while it would wind up | Both directions, own and external saturation | `tests/sdk/pid`, `tests/sdk/cascade` | PR |
+| A non-positive dt holds the output and state | Contract case; trace replay | `tests/sdk/pid`, `pid/timing_fault` | PR |
+| Zero steady-state error and bounded overshoot in closed loop | First-order plant, double integrator with offset | `tests/sdk/pid_closed_loop` | PR |
+| Recovery from saturation within 0.2 s | Closed-loop test; trace check | `tests/sdk/pid_closed_loop`, `pid/windup` | PR |
+| Same law across scalar types | Closed loop within 1e-5 (32-bit types) and 1e-2 (`posit<16,1>`) of double | `tests/sdk/pid` | PR |
+| The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
+| The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
+| A fixed operation count per update | Counted-type test (M1) | `tests/sdk/pid_resource` | PR |
+| Symmetry and scaling relations hold | Metamorphic tests (M2) | `tests/verification/pid_metamorphic` | PR |
+
+The last two rows are planned.
+
+## Milestones
+
+| # | PR scope | Requirements | Grade after |
+|---|---|---|---|
+| M1 | `tests/sdk/pid_resource.cpp`: operation count per update with `Counted<double>`, for each combination of the filter switch and the primed flag | S5 | **C** |
+| M2 | Envelope and non-goals in the header; minimum precision stated; metamorphic tests; closed-loop offsets against closed form in the test suite; sanitizer preset | S2, S4, V1, V4, T3 | — |
+| M3 | Property tests: for generated configurations, inputs, and dt, I2–I4 and the output bound hold; golden traces in `tests/` | T4, R4 | **B** |
+| M4 | Fuzz target for `update()`; coverage report; comparison with PX4's PID library on shared scenarios | T5, T6, V6 | B |
+| M5 | Datasheet: step and frequency response of the filtered derivative, numeric-type error budget, cost per type and compiler; scenario runner and monitor | C1–C4, D1–D3 | B |
+| M6 | Pid in the `sim/` scenario suite through the cascade | BB-I1, BB-I2, BB-I4 | **A** |
+
+M1 is one small test, and gives Pid the grade the cascade built from it
+already has. M2 and M3 reach B. M6 shares the `sim/` harness with the
+[quadrotor model's M9](/model/quadrotor-vv/#milestones), so the two land
+together.

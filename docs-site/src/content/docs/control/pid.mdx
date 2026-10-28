@@ -1,9 +1,23 @@
 ---
 title: PID Controller
-description: branes::reflex::Pid — a discrete PID controller for flight-control inner loops.
+description: Developer guide for branes::reflex::Pid, the discrete PID controller for flight-control inner loops.
 ---
 
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import timingFault from '../../../traces/pid/timing_fault.json';
+
 `#include <branes/reflex/control/pid.hpp>`
+
+**Grade: not yet C**, one test short under the
+[building block standard](/standards/building-blocks/): the resource
+contract (BB-S5) is stated, but its operation count is not tested
+directly. The [V&V plan](/control/pid-vv/) has the
+assessment and the path to A.
+
+This is the developer guide: the control law, contracts, and API. The
+[explainer](/control/pid-explainer/) builds the controller up one term at a
+time, and the [deployment guide](/control/pid-deployment/) covers choosing
+its limits and wiring it into a loop.
 
 `branes::reflex::Pid<Real>` is a discrete-time PID controller with the
 refinements a flight controller needs: derivative on measurement, a derivative
@@ -84,6 +98,32 @@ float torque = roll_rate.update(rate_setpoint, gyro_x, dt);
 
 Gains are fixed at construction; there is no setter. To retune, construct a new
 controller through the lifecycle (`Unconfigured → Inactive → Active`).
+
+## Reading a timing fault in a trace
+
+`update()` trusts the `dt` it is given. A non-positive `dt` is a fault, and
+the controller holds its output and state. A positive `dt` is always
+accepted, however long. So when a loop misbehaves after a scheduler
+problem, the trace of `dt` next to the output and the integral tells which
+case it was. The scenario below replays three faults of the kind a
+scheduler produces.
+
+<TracePlayer
+  trace={timingFault}
+  title="What does the controller do when its scheduler misbehaves?"
+  description="A PI controller (k_p = 1, k_i = 10) drives a first-order plant toward 0.5 from 20 ms. The plant runs on real time at 1 kHz; the controller is called with the dt its scheduler measured, plotted at the bottom. At 50 ms a duplicated tick passes dt = 0, and at 70 ms the clock steps back and passes −1 ms. On each, the command and the integral hold for one tick, exactly, and the plant moves on. From 100 ms the controller misses 49 ticks: the actuator holds the last command, flat on the plot, while the plant keeps moving. At 149 ms it runs with dt = 50 ms. That dt is valid, so the integral takes the whole 50 ms in one step and jumps by 0.07, and the command steps down to match the new error. Pass criterion: on the two faulted ticks, the output and the integral change by exactly 0."
+  plots={[
+    { channel: 'command', title: 'Command', labels: ['u'] },
+    { channel: 'integral', title: 'Integral term', labels: ['I'] },
+    { channel: 'response', title: 'Plant output', labels: ['x'],
+      series: [{ channel: 'setpoint', label: 'setpoint', color: 4, dashed: true }] },
+    { channel: 'dt_passed', title: 'dt passed to update()', labels: ['dt'] },
+  ]}
+/>
+
+The controller cannot tell a late tick from a slow loop. A gap like the one
+at 100 ms is the scheduler's to detect: an overrun counter, or a watchdog
+that resets the controller when the gap is longer than the loop tolerates.
 
 ## Scalar types
 

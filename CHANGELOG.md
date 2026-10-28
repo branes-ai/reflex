@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/branes-ai/reflex/compare/v0.6.0...v0.6.1) (2026-10-28)
+
+
+### Documentation
+
+* **control:** pid block pages and live widgets (animation plan p3, part 1) ([#43](https://github.com/branes-ai/reflex/issues/43)) ([fa4fab7](https://github.com/branes-ai/reflex/commit/fa4fab75205978f2dd53da3c5a6b7b12c991753e))
+
 ## [0.6.0](https://github.com/branes-ai/reflex/compare/v0.5.1...v0.6.0) (2026-10-27)
 
 

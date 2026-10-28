@@ -37,7 +37,7 @@ Assessment on 2026-10-28, against commit `e9f3eab`.
 | S3 parameters | ✅ | `mixer_params_valid` rejects a zero arm, a NaN coefficient, a negative T_min, and T_min = T_max (`tests/sdk/mixer.cpp`); units on every field; `mixer_params_from()` derives them from the vehicle |
 | S4 scalar types | ◐ | Every test runs in double and float. No posit or cfloat; the minimum precision is not stated |
 | S5 resource | ◐ | No allocation, no exceptions, and constant time, stated in the header. `mix()` runs 47 operations, +1 when roll and pitch scale, +1 for a yaw demand, and +2 for each rounding guard of the clamp, at most 53, with no calls, over 4000 generated demands that reach every stage of the priority and the guard; `allocate()` 14, `wrench()` 15, `to_rotor_command()` 4 and four square roots (`tests/sdk/mixer_resource.cpp`). `allocate()`, `wrench()`, and `mix()` are not marked `noexcept` |
-| T1 unit | ✅ | The round trip, the geometry's signs, the identity inside the limits, each corner of the priority, yaw that relieves a saturation, a postcondition sweep over 800 demands with T_min > 0, continuity across the boundary, the rotor commands, and the saturation report (`tests/sdk/cascade.cpp`) |
+| T1 unit | ✅ | The round trip, the geometry's signs, the identity inside the limits, each corner of the priority, yaw that relieves a saturation, a postcondition sweep over 800 demands with T_min > 0, continuity across the boundary, and the rotor commands (`tests/sdk/mixer.cpp`); the saturation report (`tests/sdk/cascade.cpp`) |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
 | T4 properties | ❌ | The postcondition sweep is a fixed grid, not generated |

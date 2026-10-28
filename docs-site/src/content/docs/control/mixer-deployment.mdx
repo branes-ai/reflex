@@ -130,9 +130,10 @@ response.
 
 ## Cost
 
-About 17 ns per `mix()` call and 3 ns per `allocate()` on x86, for float
-and double alike (`bench/mixer_bench`, GCC 15.2 Release, i7-12700K), over
-demands that sweep the throttle range and take every stage of the priority.
+About 19 ns per `mix()` call and 3 ns per `allocate()` on x86, for float
+and double alike (`bench/mixer_bench`, GCC 15.2 Release, i7-12700K; 15 to
+17 ns for `mix()` with Clang 21), over demands that sweep the throttle range
+and take every stage of the priority.
 The operation count is bounded, with no calls
 (`tests/sdk/mixer_resource.cpp`): `mix()` runs 47 arithmetic operations,
 one more when roll and pitch scale and one more for a yaw demand, and two

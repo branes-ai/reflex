@@ -18,6 +18,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <cstdint>
 #include <random>
 
@@ -43,8 +44,8 @@ PidConfig<Counted> config(double tau) {
     cfg.kp = Counted(2);
     cfg.ki = Counted(5);
     cfg.kd = Counted(0.1);
-    cfg.output_min = Counted(-1);
-    cfg.output_max = Counted(1);
+    cfg.output_min = Counted(-2);
+    cfg.output_max = Counted(2);
     cfg.integral_min = Counted(-0.5);
     cfg.integral_max = Counted(0.5);
     cfg.derivative_tau = Counted(tau);
@@ -75,24 +76,49 @@ TEST_CASE("S5: a pid update has a fixed operation count per filter and primed st
         pid.reset();
         REQUIRE(update(pid, 0.2, 0.0, 1e-3, 0).ops == unprimed);
 
-        // Generated inputs reach both output limits, both integral bounds,
-        // anti-windup in both directions, and external reports of each sign.
+        // Generated inputs, with external reports of each sign, reach both
+        // output limits, both integral bounds, and an anti-windup freeze in
+        // each direction: an integral left unchanged, off its bound, while
+        // the error pushes it that way.
         const std::uint32_t seed = 20261027;
         INFO("seed " << seed);
         std::mt19937 rng(seed);
         const auto u = [&rng](double lo, double hi) { return std::uniform_real_distribution<double>(lo, hi)(rng); };
-        bool hit_high = false;
-        bool hit_low = false;
+        bool output_high = false;
+        bool output_low = false;
+        bool integral_high = false;
+        bool integral_low = false;
+        bool frozen_high = false;
+        bool frozen_low = false;
+        double r = 0;
+        double y = 0;
         for (int i = 0; i < 2000; ++i) {
+            // A setpoint held for 50 updates, long enough for the integral to
+            // reach a bound, and a slow walk for the measurement, so the D
+            // term does not pin the output at a limit.
+            if (i % 50 == 0) {
+                r = u(-2, 2);
+            }
+            y = std::clamp(y + u(-5e-3, 5e-3), -2.0, 2.0);
             const int ext = static_cast<int>(rng() % 3) - 1;
-            c = update(pid, u(-2, 2), u(-2, 2), u(1e-4, 2e-2), ext);
+            const double before = pid.integral().v;
+            c = update(pid, r, y, u(1e-3, 2e-2), ext);
             INFO("update " << i);
             REQUIRE(c.ops == primed);
             REQUIRE(c.calls == 0);
-            hit_high = hit_high || pid.output() == Counted(1);
-            hit_low = hit_low || pid.output() == Counted(-1);
+            const double after = pid.integral().v;
+            output_high = output_high || pid.output() == Counted(2);
+            output_low = output_low || pid.output() == Counted(-2);
+            integral_high = integral_high || after == 0.5;
+            integral_low = integral_low || after == -0.5;
+            frozen_high = frozen_high || (r > y && after == before && before < 0.5);
+            frozen_low = frozen_low || (r < y && after == before && before > -0.5);
         }
-        REQUIRE(hit_high);
-        REQUIRE(hit_low);
+        REQUIRE(output_high);
+        REQUIRE(output_low);
+        REQUIRE(integral_high);
+        REQUIRE(integral_low);
+        REQUIRE(frozen_high);
+        REQUIRE(frozen_low);
     }
 }

@@ -33,7 +33,7 @@ Assessment on 2026-10-27, against commit `95c5a21` with M1's tests added.
 | S2 envelope | ◐ | The non-goals are implicit: no setpoint weighting, feed-forward, gain scheduling, or bumpless transfer. Not written down as an envelope |
 | S3 parameters | ✅ | `pid_config_valid` rejects each violation; units on every field. The defaults are a neutral normalized command, not tuned gains; tuned gains come from `cascade_config_from()`, traced to RP-1 |
 | S4 scalar types | ◐ | The control law and a closed loop run in double, float, `posit<32,2>`, `posit<16,1>`, and `cfloat<32,8>`, with tolerances by precision (`tests/sdk/pid.cpp`). The minimum precision is not stated |
-| S5 resource | ✅ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. A fixed operation count per update, 10 or 12 unfiltered and 15 or 17 filtered (unprimed or primed), and none on a rejected dt, over 2000 generated updates that reach both limits and both anti-windup directions (`tests/sdk/pid_resource.cpp`) |
+| S5 resource | ✅ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. A fixed operation count per update, 10 or 12 unfiltered and 15 or 17 filtered (unprimed or primed), and none on a rejected dt, over 2000 generated updates that reach both output limits, both integral bounds, and an anti-windup freeze in each direction (`tests/sdk/pid_resource.cpp`) |
 | T1 unit | ✅ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault; three closed-loop tests. The validator rejects a negative k_p, k_i, k_d, or τ, and either limit pair inverted |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |

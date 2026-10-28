@@ -150,8 +150,9 @@ for a clean measurement or no D term.
   each case.
 - **Cost.** About 12–13 ns per update on x86, for float and double alike
   (`bench/pid_bench`, GCC 15.2 Release, i7-12700K). The operation count is
-  fixed for a given configuration; measure on the flight processor before
-  budgeting.
+  fixed: 12 arithmetic operations per update, 17 with the derivative filter
+  (`tests/sdk/pid_resource.cpp`), and no calls. Measure on the flight
+  processor before budgeting.
 
 ## Lifecycle
 

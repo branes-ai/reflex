@@ -187,6 +187,12 @@ TEST_CASE("pid: config validation", "[pid]") {
     cfg.kp = -1.0;
     REQUIRE_FALSE(pid_config_valid(cfg));
     cfg = {};
+    cfg.ki = -1.0;
+    REQUIRE_FALSE(pid_config_valid(cfg));
+    cfg = {};
+    cfg.kd = -1.0;
+    REQUIRE_FALSE(pid_config_valid(cfg));
+    cfg = {};
     cfg.output_min = 2.0;
     REQUIRE_FALSE(pid_config_valid(cfg));
     cfg = {};

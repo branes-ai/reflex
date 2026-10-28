@@ -25,7 +25,7 @@ racing-drone's B0 baseline.
 
 ## Where it stands
 
-Assessment on 2026-10-27, against commit `95c5a21`.
+Assessment on 2026-10-27, against commit `95c5a21` with M1's tests added.
 
 | Req | Status | Evidence today / gap |
 |---|---|---|
@@ -33,8 +33,8 @@ Assessment on 2026-10-27, against commit `95c5a21`.
 | S2 envelope | ◐ | The non-goals are implicit: no setpoint weighting, feed-forward, gain scheduling, or bumpless transfer. Not written down as an envelope |
 | S3 parameters | ✅ | `pid_config_valid` rejects each violation; units on every field. The defaults are a neutral normalized command, not tuned gains; tuned gains come from `cascade_config_from()`, traced to RP-1 |
 | S4 scalar types | ◐ | The control law and a closed loop run in double, float, `posit<32,2>`, `posit<16,1>`, and `cfloat<32,8>`, with tolerances by precision (`tests/sdk/pid.cpp`). The minimum precision is not stated |
-| S5 resource | ◐ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. The operation count is not tested directly, only inside the cascade's rate tick (`tests/sdk/cascade_resource.cpp`) |
-| T1 unit | ◐ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault; three closed-loop tests. The validator's tests cover a negative k_p, both limit pairs, and a negative τ, but not a negative k_i or k_d |
+| S5 resource | ✅ | `noexcept`, no allocation, constant time, stated in the header; `constexpr` use tested. A fixed operation count per update, 10 or 12 unfiltered and 15 or 17 filtered (unprimed or primed), and none on a rejected dt, over 2000 generated updates that reach both limits and both anti-windup directions (`tests/sdk/pid_resource.cpp`) |
+| T1 unit | ✅ | Each term, each limit, anti-windup in both directions, external saturation, the derivative filter, reset, the `dt` fault; three closed-loop tests. The validator rejects a negative k_p, k_i, k_d, or τ, and either limit pair inverted |
 | T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
 | T3 sanitizers | ❌ | No sanitizer preset |
 | T4 properties | ❌ | — |
@@ -56,9 +56,9 @@ Assessment on 2026-10-27, against commit `95c5a21`.
 | R4 | ◐ | The committed traces pin six scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
 | R2, R3 | ❌ | — |
 
-**Grade today: not yet C.** Two C requirements are short by a test each:
-S5's operation count, and T1's validator cases for a negative k_i and k_d.
-M1 adds both and reaches C.
+**Grade today: C.** S1, S3, S5, T1, and T2 are met, with `bench/pid_bench`
+as the benchmark. B needs S2, S4, T3, T4, V1–V4, V7, and R4; V7 is N/A
+here.
 
 ## Animations
 
@@ -117,23 +117,23 @@ copy whose limits are set wide open, so that its anti-windup never engages.
 | Same law across scalar types | Closed loop within 1e-5 (32-bit types) and 1e-2 (`posit<16,1>`) of double | `tests/sdk/pid` | PR |
 | The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
 | The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
-| A fixed operation count per update | Counted-type test (M1) | `tests/sdk/pid_resource` | PR |
+| A fixed operation count per update | Counted-type test, per filter and primed state | `tests/sdk/pid_resource` | PR |
 | Symmetry and scaling relations hold | Metamorphic tests (M2) | `tests/verification/pid_metamorphic` | PR |
 
-The last two rows are planned.
+The last row is planned.
 
 ## Milestones
 
 | # | PR scope | Requirements | Grade after |
 |---|---|---|---|
-| M1 | `tests/sdk/pid_resource.cpp`: operation count per update with `Counted<double>`, for each combination of the filter switch and the primed flag; validator cases for a negative k_i and k_d | S5, T1 | **C** |
+| M1 ✅ | `tests/sdk/pid_resource.cpp`: operation count per update with `Counted`, for each combination of the filter switch and the primed flag; validator cases for a negative k_i and k_d | S5, T1 | **C** |
 | M2 | Envelope and non-goals in the header; minimum precision stated; metamorphic tests; closed-loop offsets against closed form in the test suite; sanitizer preset | S2, S4, V1, V4, T3 | — |
 | M3 | Property tests: for generated configurations, inputs, and dt, I2–I4 and the output bound hold; golden traces in `tests/` | T4, R4 | **B** |
 | M4 | Fuzz target for `update()`; coverage report; comparison with PX4's PID library on shared scenarios | T5, T6, V6 | B |
 | M5 | Datasheet: step and frequency response of the filtered derivative, numeric-type error budget, cost per type and compiler; scenario runner and monitor | C1–C4, D1–D3 | B |
 | M6 | Pid in the `sim/` scenario suite through the cascade | BB-I1, BB-I2, BB-I4 | **A** |
 
-M1 is two small tests, and gives Pid the grade the cascade built from it
-already has. M2 and M3 reach B. M6 shares the `sim/` harness with the
+M1 is done, and gives Pid the grade the cascade built from it already has.
+M2 and M3 reach B. M6 shares the `sim/` harness with the
 [quadrotor model's M9](/model/quadrotor-vv/#milestones), so the two land
 together.

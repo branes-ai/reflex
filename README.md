@@ -16,18 +16,27 @@ The Branes.AI platform follows the same split:
 | [`cortex`](https://github.com/branes-ai/cortex) | Cerebral cortex | Perception (VIO, SLAM, SfM), world building (3D scene graphs), path planning | ~5–100 Hz, best effort |
 | **`reflex`** (this repo) | Brainstem, spinal cord, autonomic system | Stabilization, IMU state estimation, trajectory tracking, optimal control, fault detection and recovery, safety envelopes | ~100 Hz–8 kHz, hard real-time |
 | [`synapse`](https://github.com/branes-ai/synapse) | The synapses: where signals are transmitted and computed | Tensor graph engine: execution of ML models, with static memory planning | Deterministic, allocation-free |
+| [`anatomy`](https://github.com/branes-ai/anatomy) | The body plan | The mission framework every mission is composed with: data contracts, slots, configs, replay log, harness, closed-loop simulator (on the `reflex` dynamics) | — |
 | [`racing-drone`](https://github.com/branes-ai/racing-drone) | The whole organism | Mission and flight controller for an autonomous racing drone, assembled from `cortex` and `reflex` components | — |
+| [`scout-drone`](https://github.com/branes-ai/scout-drone) | The whole organism | Mission and flight controller for a drone that flies fast through unknown terrain to a goal | — |
 
 `cortex` tells the vehicle *where it should go*. `reflex` makes sure it *gets there without falling out of the sky*, and takes over when something goes wrong: a motor fails, a sensor drops out, or the planner sends a command that would leave the safe flight envelope.
 
 ### The Branes.AI stack
 
 ```text
-+--------------+ +-------------------+ +-----------+ +------------+
-| racing-drone | | interceptor-drone | | isr-drone | | nano-drone | ...  Mission
-+--------------+ +-------------------+ +-----------+ +------------+
-        |                  |                 |              |
-        v                  v                 v              v
++--------------+ +-------------+
+| racing-drone | | scout-drone | ...                                     Mission
++--------------+ +-------------+
+        |               |
+        v               v
++---------------------------------------------------------------------+
+|                            Branes Anatomy                           |  Mission
+| data contracts, slots and composition, configs, replay log,         |  framework
+| harness, closed-loop simulator                                      |
++---------------------------------------------------------------------+
+           |                       |                       |
+           v                       v                       v
 +---------------------+ +---------------------+ +---------------------+
 |    Branes Cortex    | |   Branes Synapse    | |    Branes Reflex    |  Platform
 | perception (VIO,    | | tensor graph engine | | stabilization, MPC, |
@@ -46,14 +55,15 @@ The Branes.AI platform follows the same split:
 +-----------+ +-------------------+ +-------------------+ +-----------+
 ```
 
-The Branes.AI stack has four tiers:
+The Branes.AI stack has five tiers:
 
-- **Mission**: one repo per vehicle and mission (`racing-drone`, `interceptor-drone`, `isr-drone`, `nano-drone`, ...). It owns the mission capability and composes platform components; algorithms do not live there.
+- **Mission**: one repo per vehicle and mission. `racing-drone` and `scout-drone` are the two that stand up the architecture; more follow (`interceptor-drone`, `isr-drone`, `nano-drone`, `counter-uas`). A mission repo owns its task: its world, the slots that see it, its stack and scorer, and its data. Algorithms do not live there.
+- **Mission framework**: [`anatomy`](https://github.com/branes-ai/anatomy), the body plan every mission composes its vehicle with: the data contracts, the slot concepts and their composition, configs, the replay log, the harness, and the closed-loop simulator. It holds no algorithms and no mission.
 - **Platform**: three sister repos, `cortex`, `synapse`, and `reflex`, that provide the functionality and services a mission is built from. None of them sits above the others.
 - **Math**: [MTL5](https://github.com/stillwater-sc/mtl5) provides high-performance linear algebra and [Universal](https://github.com/stillwater-sc/universal) provides computer arithmetic (posits, intervals, mixed precision, hardware-aligned types).
 - **Hardware**: the configurations the stack targets: CPU, CPU + GPU, CPU + KPU, and KPU. Today the stack runs on CPU; GPU and KPU support are planned, and the KPU is a stub until the silicon ships.
 
-Arrows point from a tier to the tier below it that it builds on. They show how the tiers relate, not the dependencies of individual repos: each repo's build declares the libraries it actually uses.
+Arrows point from a tier to the tier below it that it builds on. They show how the tiers relate, not the dependencies of individual repos: each repo's build declares the libraries it actually uses. A mission also uses platform components directly: it composes them into anatomy's slots.
 
 ## Design principles
 

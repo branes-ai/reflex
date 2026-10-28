@@ -11,7 +11,7 @@
 // C ABI
 // -----
 //   const char* reflex_run(const char* scenario, double p0, double p1, double p2)
-//       Runs `scenario` ("motor_lag", "tumble", "roll_step") with up to three
+//       Runs `scenario` (one of those listed below) with up to three
 //       parameters, in the order listed below, and returns its reflex-trace/1
 //       JSON. The string stays valid until the next call. On an unknown
 //       scenario or a parameter outside its range it returns null, and
@@ -24,8 +24,14 @@
 //   motor_lag   p0 = τ [s]
 //   tumble      p0, p1, p2 = J_x, J_y, J_z [kg·m²]
 //   roll_step   p0 = attitude gain K [1/s], p1 = rate gain k_p [1/s]
+//   pid_terms   p0, p1, p2 = k_p [1/s²], k_i [1/s³], k_d [1/s]
+//   pid_derivative_filter  p0 = derivative_tau [s]
+//   pid_windup  p0 = k_i [1/s], p1 = hold time [s]
 
 #include "cascade/roll_step.hpp"
+#include "pid/derivative_filter.hpp"
+#include "pid/terms.hpp"
+#include "pid/windup.hpp"
 #include "quadrotor/motor_lag.hpp"
 #include "quadrotor/tumble.hpp"
 
@@ -61,6 +67,15 @@ branes::reflex::trace::Trace dispatch(std::string_view scenario, double p0, doub
     }
     if (scenario == "roll_step") {
         return sc::roll_step::run({.attitude_gain = p0, .rate_gain = p1});
+    }
+    if (scenario == "pid_terms") {
+        return sc::pid_terms::run({.kp = p0, .ki = p1, .kd = p2});
+    }
+    if (scenario == "pid_derivative_filter") {
+        return sc::pid_derivative_filter::run({.tau = p0});
+    }
+    if (scenario == "pid_windup") {
+        return sc::pid_windup::run({.ki = p0, .hold = p1});
     }
     throw std::invalid_argument("unknown scenario " + std::string(scenario));
 }

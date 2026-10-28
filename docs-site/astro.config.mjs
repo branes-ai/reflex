@@ -100,7 +100,15 @@ export default defineConfig({
           label: 'Control',
           items: [
             { label: 'Quadrotor Control Guide', slug: 'control/quadrotor-control' },
-            { label: 'PID Controller', slug: 'control/pid' },
+            {
+              label: 'PID Controller',
+              items: [
+                { label: 'Explainer', slug: 'control/pid-explainer' },
+                { label: 'Developer Guide', slug: 'control/pid' },
+                { label: 'V&V Plan', slug: 'control/pid-vv' },
+                { label: 'Deployment Guide', slug: 'control/pid-deployment' },
+              ],
+            },
             { label: 'Mixer', slug: 'control/mixer' },
             { label: 'Cascaded Controller', slug: 'control/cascade' },
           ],

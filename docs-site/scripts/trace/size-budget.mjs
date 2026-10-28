@@ -3,8 +3,12 @@
 //   - each committed trace (src/traces/**.json): ≤ 250 KB;
 //   - each WebAssembly module plus its JavaScript loader, as built into
 //     dist/wasm/ (scripts/build-wasm.sh, copied from public/wasm/): ≤ 400 KB;
-//   - three.js is outside the budget, but may appear only in the built bundles
-//     of pages that use the 3-D view (a [data-vehicle-view] element).
+//   - three.js is outside the budget, but may load only on pages that use the
+//     3-D view (a [data-vehicle-view] element). Every TracePlayer page can
+//     reach the view chunk through a dynamic import() in the player's script,
+//     which player.ts makes only when the player has a view. So a page
+//     without a view must not reach three.js through any other import,
+//     static or dynamic, and a page with one must reach it through either.
 //
 // Run after `astro build` (it reads dist/). With --require-wasm, a build
 // without a WebAssembly module fails too (CI builds one).
@@ -53,9 +57,10 @@ for (const f of wasm) {
   row(`${relative(root, f)} + ${basename(loader)}`, gz(f) + gz(loader), 400 * KB);
 }
 
-// three.js placement: follow each page's module scripts through their static
-// and dynamic imports, and flag any page without a 3-D view that reaches a
-// chunk containing three.js.
+// three.js placement: follow each page's module scripts through their
+// imports, and flag a page without a 3-D view that can load three.js other
+// than through the player's guarded import, or a page with one that cannot
+// reach it at all.
 const dist = join(root, 'dist');
 if (!existsSync(dist)) {
   console.error('FAIL dist/ not found: run `npm run build` first');
@@ -65,17 +70,23 @@ const chunkCache = new Map();
 function chunkInfo(path) {
   if (!chunkCache.has(path)) {
     const src = existsSync(path) ? readFileSync(path, 'utf8') : '';
-    const imports = [...src.matchAll(/(?:import|from)\s*\(?\s*["'](\.{1,2}\/[^"']+\.js)["']/g)].map((m) => resolve(dirname(path), m[1]));
+    const paths = (re) => [...src.matchAll(re)].map((m) => resolve(dirname(path), m[1]));
+    const dynamic = paths(/import\s*\(\s*["'](\.{1,2}\/[^"']+\.js)["']/g);
+    const statics = paths(/(?:from|import)\s*["'](\.{1,2}\/[^"']+\.js)["']/g);
     // three.js stamps its revision into the bundle.
-    chunkCache.set(path, { three: /REVISION\s*=\s*["']\d+/.test(src) || src.includes('__THREE__'), imports });
+    // The player's script chunk: its dynamic import of the view is guarded.
+    const guarded = basename(path).startsWith('TracePlayer.astro_astro_type_script');
+    chunkCache.set(path, { three: /REVISION\s*=\s*["']\d+/.test(src) || src.includes('__THREE__'), statics, dynamic, guarded });
   }
   return chunkCache.get(path);
 }
-function reachesThree(entry, seen = new Set()) {
+// withGuarded: also follow the player's guarded import of the view.
+function reachesThree(entry, withGuarded, seen = new Set()) {
   if (seen.has(entry)) return false;
   seen.add(entry);
   const info = chunkInfo(entry);
-  return info.three || info.imports.some((i) => reachesThree(i, seen));
+  const next = withGuarded || !info.guarded ? [...info.statics, ...info.dynamic] : info.statics;
+  return info.three || next.some((i) => reachesThree(i, withGuarded, seen));
 }
 console.log('three.js placement (only pages with a 3-D view):');
 let threePages = 0;
@@ -86,17 +97,18 @@ for (const page of list(dist, ['.html'])) {
     [...m[1].matchAll(/["'](\/[^"']+\.js)["']/g)].map((x) => x[1]),
   );
   const entries = [...scripts, ...inline].map((s) => join(dist, s.replace(/^\/reflex\//, '/')));
-  const usesThree = entries.some((e) => reachesThree(e));
+  const loadsThree = entries.some((e) => reachesThree(e, false));
+  const reachesView = entries.some((e) => reachesThree(e, true));
   const hasView = html.includes('data-vehicle-view');
-  if (usesThree) threePages++;
-  if (usesThree && !hasView) {
+  if (hasView && reachesView) threePages++;
+  if (loadsThree && !hasView) {
     failed = true;
     console.log(`FAIL ${relative(dist, page)} loads three.js without a 3-D view`);
-  } else if (hasView && !usesThree) {
+  } else if (hasView && !reachesView) {
     failed = true;
     console.log(`FAIL ${relative(dist, page)} has a 3-D view but no three.js bundle was found (check the detector)`);
   }
 }
-console.log(`     ${threePages} page(s) load three.js, each with a 3-D view`);
+console.log(`     ${threePages} page(s) with a 3-D view load three.js; no other page does`);
 
 process.exit(failed ? 1 : 0);

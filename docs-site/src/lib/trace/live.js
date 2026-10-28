@@ -30,6 +30,27 @@ export const LIVE = {
       { name: 'rate_gain', label: 'Rate gain k_p', unit: '1/s', scale: 1, min: 10, max: 150, step: 5, default: 50 },
     ],
   },
+  pid_terms: {
+    trace: 'pid/terms.json',
+    params: [
+      { name: 'kp', label: 'Proportional gain k_p', unit: '1/s²', scale: 1, min: 2, max: 40, step: 1, default: 16 },
+      { name: 'ki', label: 'Integral gain k_i', unit: '1/s³', scale: 1, min: 0, max: 30, step: 1, default: 8 },
+      { name: 'kd', label: 'Derivative gain k_d', unit: '1/s', scale: 1, min: 0, max: 20, step: 0.5, default: 8 },
+    ],
+  },
+  pid_derivative_filter: {
+    trace: 'pid/derivative_filter.json',
+    params: [
+      { name: 'tau', label: 'Derivative filter τ', unit: 'ms', scale: 1e-3, min: 0.5, max: 500, step: 0.5, default: 0.005 },
+    ],
+  },
+  pid_windup: {
+    trace: 'pid/windup.json',
+    params: [
+      { name: 'ki', label: 'Integral gain k_i', unit: '1/s', scale: 1, min: 1, max: 30, step: 1, default: 10 },
+      { name: 'hold', label: 'Time at the unreachable setpoint', unit: 's', scale: 1, min: 0.5, max: 3, step: 0.1, default: 2 },
+    ],
+  },
 };
 
 /** Runs `scenario` in a loaded module with SI parameter values; returns the parsed trace. */

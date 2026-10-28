@@ -246,8 +246,14 @@ fail.
 | Profile | Used by | Compared | $r_{\text{tol}}$ | $a_{\text{tol}}$ |
 |---|---|---|---|---|
 | `regen` | ANI-3: regenerated against committed, possibly with a different compiler | All channels, `events`, and `checks` | 1e-9 | position 1e-9 m; velocity 1e-9 m/s; attitude 1e-9 rad; body rates 1e-9 rad/s; rotor speeds and their setpoints 1e-6 rad/s; other channels 1e-9 in their unit |
-| `wasm` | Tier 2: Wasm against native, every live scenario at its default parameters | Reserved channels; rules 2–3 apply to them, and rules 4–5 do not | 1e-9 | as `regen` |
+| `wasm` | Tier 2: Wasm against native, every live scenario at its default parameters | As `regen`: all channels, `events`, and `checks` | 1e-9 | as `regen` |
 
+- **Why `wasm` compares everything.** It first compared only the reserved
+  channels, which are the ones the 3-D view reads. The control blocks' live
+  scenarios (P3) have none: a PID trace is all block-specific channels. So
+  `wasm` now compares what `regen` does. The module and the native build run
+  the same scenario function, so they agree to roundoff on every channel,
+  and on the events and checks computed from them.
 - **Attitude** is compared as the rotation angle
   $2\,\mathrm{asin}(\lVert \mathrm{vec}(q_a^{-1} \otimes q_b) \rVert)$, so
   q and −q are equal.
@@ -322,7 +328,14 @@ continues to P2. P2 is built: three live widgets, two on the
 [quadrotor explainer](/model/quadrotor-explainer/) (τ, and the three
 moments of inertia) and one on the [cascade page](/control/cascade/#try-the-gains)
 (attitude and rate gains), run their scenarios' C++ in the browser. CI
-checks each against its native trace.
+checks each against its native trace. P3 is under way, one block per PR.
+The PID controller has its four pages: the
+[explainer](/control/pid-explainer/) with three live widgets (the gains,
+the derivative filter, and windup), the [developer guide](/control/pid/),
+the [V&V plan](/control/pid-vv/), and the
+[deployment guide](/control/pid-deployment/), from six scenarios in
+`tools/trace/scenarios/pid/`. The mixer, the cascade, and the filters
+follow.
 
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method

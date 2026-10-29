@@ -24,6 +24,7 @@
 //   motor_lag   p0 = τ [s]
 //   tumble      p0, p1, p2 = J_x, J_y, J_z [kg·m²]
 //   roll_step   p0 = attitude gain K [1/s], p1 = rate gain k_p [1/s]
+//   cascade_waypoint  p0 = peak speed [m/s], p1 = feed-forward fraction [1]
 //   pid_terms   p0, p1, p2 = k_p [1/s²], k_i [1/s³], k_d [1/s]
 //   pid_derivative_filter  p0 = derivative_tau [s]
 //   pid_windup  p0 = k_i [1/s], p1 = hold time [s]

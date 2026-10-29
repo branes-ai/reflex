@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <cmath>
 #include <numbers>
+#include <stdexcept>
 
 int main() {
     namespace trace = branes::reflex::trace;
@@ -95,6 +96,12 @@ int main() {
             }
         }
 
+        // Both must settle, or equal "last outside" times would pass the check vacuously.
+        for (int i = 0; i < 2; ++i) {
+            if (ct::tilt_between(f[i].x.attitude, target[i].attitude) > kBand) {
+                throw std::runtime_error("tilt_yaw: a vehicle did not settle within 2° of its target");
+            }
+        }
         tr.event(kStart * ct::kDtSim, "target: roll 30°; the solid vehicle also turns 90°");
         tr.check({.id = "BB-I2",
                   .metric = "tilt_settle_delay_from_yaw",

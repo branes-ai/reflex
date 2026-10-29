@@ -21,10 +21,15 @@
 // along each leg and reaches its top speed of 4.5 m/s late. It stays on the
 // square (within 0.09 m), because each leg is straight and ends at rest. At
 // 8 m/s with full feed-forward, the profile's 6.4 m/s² plus the corrections
-// reach the 40° tilt limit, and the vehicle runs 0.6 m wide of the corners.
+// reach the 40° tilt limit, and the vehicle runs 0.61 m wide of the corners,
+// which fails the check.
 //
-// Check (BB-I2): the RMS cross-track error, the distance from the square's
-// edges, at most 0.3 m, the criterion of reflex#20 for v = 5 m/s.
+// Check (BB-I2), the criterion of reflex#20 for v = 5 m/s, in three parts:
+// the RMS cross-track error (the distance from the square's edges) at most
+// 0.3 m, its maximum at most 0.6 m, and the flown top speed within 10 % of
+// the peak v. Each part is taken as a fraction of its limit, and the worst
+// fraction must be at most 1, so a vehicle that never leaves the corner
+// fails on its speed.
 //
 // The parameters are the peak speed and the feed-forward fraction.
 // waypoint.cpp writes the trace at the defaults (5 m/s, full feed-forward);
@@ -126,6 +131,8 @@ inline trace::Trace run(const Params& p) {
     tr.channel("tilt", 2, "rad");
 
     double sum2 = 0;
+    double worst = 0;
+    double top_speed = 0;
     for (int n = 0; n <= ticks; ++n) {
         const double t = n * ct::kDtSim;
         const auto [sp, profile_speed] = setpoint(t);
@@ -143,6 +150,8 @@ inline trace::Trace run(const Params& p) {
         }
         const double c = cross_track(f.x.position);
         sum2 += c * c;
+        worst = std::max(worst, c);
+        top_speed = std::max(top_speed, norm(f.x.velocity));
         f.advance();
     }
 
@@ -150,11 +159,13 @@ inline trace::Trace run(const Params& p) {
         tr.event(k * leg, k == 0 ? "leg 1: the setpoint sets off along +x" : "corner: the setpoint turns 90°");
     }
     tr.event(4 * leg, "back at the start: hover");
+    const double rms = std::sqrt(sum2 / (ticks + 1));
+    const double worst_fraction = std::max({rms / 0.3, worst / 0.6, std::abs(top_speed - v) / (0.1 * v)});
     tr.check({.id = "BB-I2",
-              .metric = "cross_track_rms",
-              .unit = "m",
-              .value = std::sqrt(sum2 / (ticks + 1)),
-              .limit = 0.3,
+              .metric = "worst_criterion_fraction",
+              .unit = "1",
+              .value = worst_fraction,
+              .limit = 1,
               .comparison = "<="});
     return tr;
 }

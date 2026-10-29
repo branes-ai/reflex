@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.2](https://github.com/branes-ai/reflex/compare/v0.6.1...v0.6.2) (2026-10-29)
+
+
+### Documentation
+
+* **control:** mixer block pages and live widgets (animation plan p3, part 2) ([#45](https://github.com/branes-ai/reflex/issues/45)) ([d543983](https://github.com/branes-ai/reflex/commit/d5439836f6369b19a5baa4c65624c1ccf8e4a359))
+* the five-tier stack diagram, with anatomy and scout-drone ([#46](https://github.com/branes-ai/reflex/issues/46)) ([4031b62](https://github.com/branes-ai/reflex/commit/4031b62b43bd3bdedaeb0c2e3725d3823402f7b1))
+
 ## [0.6.1](https://github.com/branes-ai/reflex/compare/v0.6.0...v0.6.1) (2026-10-28)
 
 

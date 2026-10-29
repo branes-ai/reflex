@@ -326,7 +326,8 @@ scenarios in `tools/trace/scenarios/quadrotor/`. The exit review, by one
 newcomer and one integrator, found them clear (2026-10-26), so the method
 continues to P2. P2 is built: three live widgets, two on the
 [quadrotor explainer](/model/quadrotor-explainer/) (τ, and the three
-moments of inertia) and one on the [cascade page](/control/cascade/#try-the-gains)
+moments of inertia) and one now on the
+[cascade explainer](/control/cascade-explainer/#2-the-inner-loops-a-roll-step)
 (attitude and rate gains), run their scenarios' C++ in the browser. CI
 checks each against its native trace. P3 is under way, one block per PR.
 The PID controller has its four pages: the
@@ -340,8 +341,14 @@ saturation priority, and a closed-loop comparison with per-rotor clipping),
 the [developer guide](/control/mixer/), the [V&V plan](/control/mixer-vv/),
 and the [deployment guide](/control/mixer-deployment/), from three
 scenarios in `tools/trace/scenarios/mixer/`. Its rotor thrusts are drawn as
-bars at the cursor, a panel the player gained for it. The cascade and the
-filters follow.
+bars at the cursor, a panel the player gained for it. The cascade has its
+four too: the [explainer](/control/cascade-explainer/) with two live widgets
+(the roll step's gains, and a waypoint square's speed and feed-forward), the
+[developer guide](/control/cascade/), the [V&V plan](/control/cascade-vv/),
+and the [deployment guide](/control/cascade-deployment/), from five
+scenarios in `tools/trace/scenarios/cascade/`. Each loop's setpoint is
+shown, and on the square the position loop's setpoint and attitude target
+fly as a ghost vehicle. The filters follow.
 
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method

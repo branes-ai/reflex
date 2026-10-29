@@ -30,6 +30,13 @@ export const LIVE = {
       { name: 'rate_gain', label: 'Rate gain k_p', unit: '1/s', scale: 1, min: 10, max: 150, step: 5, default: 50 },
     ],
   },
+  cascade_waypoint: {
+    trace: 'cascade/waypoint.json',
+    params: [
+      { name: 'speed', label: 'Peak speed v', unit: 'm/s', scale: 1, min: 2, max: 8, step: 0.5, default: 5 },
+      { name: 'feedforward', label: 'Feed-forward', unit: '%', scale: 0.01, min: 0, max: 100, step: 10, default: 1 },
+    ],
+  },
   pid_terms: {
     trace: 'pid/terms.json',
     params: [

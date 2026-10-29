@@ -118,7 +118,15 @@ export default defineConfig({
                 { label: 'Deployment Guide', slug: 'control/mixer-deployment' },
               ],
             },
-            { label: 'Cascaded Controller', slug: 'control/cascade' },
+            {
+              label: 'Cascaded Controller',
+              items: [
+                { label: 'Explainer', slug: 'control/cascade-explainer' },
+                { label: 'Developer Guide', slug: 'control/cascade' },
+                { label: 'V&V Plan', slug: 'control/cascade-vv' },
+                { label: 'Deployment Guide', slug: 'control/cascade-deployment' },
+              ],
+            },
           ],
         },
         {

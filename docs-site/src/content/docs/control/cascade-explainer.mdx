@@ -1,0 +1,236 @@
+---
+title: How the Cascade Works
+description: An explainer for Cascade, the multirotor flight controller, from why it is four nested loops running at three rates, through a roll step, tilt before heading, and a waypoint square, to a climb against the thrust limit, with live widgets that run the cascade's own code.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import schedule from '../../../traces/cascade/schedule.json';
+import rollStep from '../../../traces/cascade/roll_step.json';
+import tiltYaw from '../../../traces/cascade/tilt_yaw.json';
+import waypoint from '../../../traces/cascade/waypoint.json';
+import climb from '../../../traces/cascade/climb.json';
+
+A quadrotor's rotors all push along one axis, the body's z axis. To move
+sideways the vehicle has to tilt that axis, to tilt it has to turn, and to
+turn it needs a torque, which takes the motors a moment to deliver. So
+[`Cascade`](/control/cascade/) is four loops, nested, each asking the one
+inside it for what it needs:
+
+```
+position ──▶ velocity ──(tilt, thrust)──▶ attitude ──(body rates)──▶ rate ──(torque)──▶ mixer
+```
+
+Each loop can only be as fast as the one inside it lets it be, so each one
+is tuned slower than the next. This page shows the loops at work, from the
+inside out.
+
+Every animation plays a trace recorded from the cascade's own C++, flying
+the [quadrotor model](/model/quadrotor/) through the [mixer](/control/mixer/),
+and the scenario is linked under each player. The two widgets with sliders
+rerun that C++, compiled to WebAssembly, in your browser. The vehicle is
+RP-1: 1 kg, motors with a 20 ms lag, and at most 48 N of thrust. The
+controller sees the true state, with no sensor noise or delay. The controls
+and keys are described on the
+[Trace Player](/standards/trace-player/#player-behaviour) page.
+
+## The four loops
+
+| Loop | Input | Output | Runs at | Speed of response |
+|---|---|---|---|---|
+| Rate | body-rate setpoint ω_sp | torque, through an angular acceleration | 1 kHz | 50 /s |
+| Attitude | attitude target q_sp | ω_sp | 250 Hz | 10 /s for tilt, 5 /s for heading |
+| Velocity | velocity setpoint v_sp | a tilt and a collective thrust | 50 Hz | 3.6 /s |
+| Position | position setpoint | v_sp | 50 Hz | 1.6 /s |
+
+The speeds come from the motors outwards. The motor lag τ = 20 ms sets the
+rate loop at 1/τ = 50 /s, and each loop outside it is several times slower:
+the attitude loop by 5, the velocity loop by 14, the position loop by 32.
+[`cascade_config_from()`](/control/cascade/#default-gains) derives every
+gain this way from the vehicle.
+
+## 1. Three loops, three rates
+
+The inner loops run more often than the outer ones, because they have more
+to do in less time. On every rate-loop tick (1 ms), `update()` runs the rate
+loop. On every 4th it runs the attitude loop first, and on every 20th the
+position loop before that. Between its runs each outer loop holds its last
+output.
+
+*Before you play:* the setpoint sets off forward at 5 m/s, and the vehicle
+is still at rest. How often does each loop's output change?
+
+<TracePlayer
+  trace={schedule}
+  title="How often does each loop update its output?"
+  description="RP-1 hovers at 5 m in position mode. From 0 s the position setpoint moves forward at 5 m/s, with no feed-forward, and the plot shows every 1 ms tick of the first 100 ms. At 0 s the setpoint has not moved yet, so every loop outputs zero. On the 20 ms position tick the setpoint is 0.1 m ahead, and the position loop asks for 0.16 m/s and a tilt of 3.3° toward it. It holds that until 40 ms, then asks for 0.31 m/s and 6.5°, and so on: a staircase with 20 ms steps. The attitude loop turns the tilt error into a pitch-rate setpoint every 4 ms, a staircase of finer steps that start each time the tilt target moves. The rate loop's torque changes on every tick, falling as the measured rate catches up with its setpoint. Pass criterion: no output changes off its loop's schedule."
+  plots={[
+    { channel: 'velocity_setpoint_x', title: 'Position loop: velocity setpoint', labels: ['v_sp,x'], colors: [1] },
+    { channel: 'target_tilt', title: 'Velocity loop: tilt target', labels: ['tilt'], colors: [1] },
+    { channel: 'pitch_rate_setpoint', title: 'Attitude loop: pitch-rate setpoint', labels: ['q_sp'], colors: [2] },
+    { channel: 'pitch_torque', title: 'Rate loop: pitch torque', labels: ['τ_y'], colors: [3] },
+  ]}
+/>
+
+Holding an output costs nothing, so running the outer loops slower spends
+the processor on the loop that needs it. It also gives each inner loop a
+steady setpoint to settle on before the next one arrives.
+
+## 2. The inner loops: a roll step
+
+Start with the inner two loops alone, in attitude mode: the caller sets
+the attitude and the thrust, and the position loop does not run. The
+attitude loop turns the angle error into a roll-rate setpoint, K times the
+error. The rate loop turns the rate error into an angular acceleration,
+k_p times the error plus damping, and multiplies it by the inertia to get a
+torque.
+
+*Before you play:* the attitude loop runs at K = 10 /s, a fifth of the rate
+loop's 50 /s. What happens to the roll when the two come close?
+
+<TracePlayer
+  trace={rollStep}
+  live="roll_step"
+  prompt="the attitude loop runs at K = 10 /s, a fifth of the rate loop's 50 /s. Raise K toward the rate gain, or lower the rate gain toward K: what happens to the overshoot?"
+  title="How do the loop gains shape a roll step?"
+  description="The vehicle hovers at 2 m. At 0.1 s the cascade, in attitude mode, is given a target of 30° roll at hover thrust. The attitude loop turns the angle error into a roll-rate setpoint (dashed in the rate plot). The rate loop turns the rate error into a torque, and the mixer and the motors deliver it. With the default gains the roll reaches 90 % of the step in 0.16 s, without overshoot. The roll rate follows its setpoint closely, because the rate loop is five times faster than the attitude loop. The vehicle holds the roll at hover thrust, so it accelerates to the right and sinks: a held attitude is not a hover. Pass criterion: the roll overshoots the 30° step by at most 10 %, the closed-loop criterion of reflex#20."
+  plots={[
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'],
+      series: [{ channel: 'roll_setpoint', label: 'target', dashed: true }] },
+    { channel: 'body_rates', title: 'Roll rate', components: [0], labels: ['p'],
+      series: [{ channel: 'body_rates_setpoint', component: 0, label: 'setpoint', dashed: true }] },
+    { channel: 'body_torque', title: 'Roll torque', components: [0], labels: ['τ_x'] },
+    { channel: 'rotor_speeds', title: 'Rotor speeds', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR (= 3 RR)', '1 RL (= 2 FL)'] },
+  ]}
+/>
+
+When the two loops' speeds come close, the attitude loop asks for rates
+faster than the rate loop can deliver, and the roll overshoots. The default
+ratio of 5 leaves margin for slower motors, more inertia, and delay. The
+closed-loop tests require at most 25 % overshoot with the motors twice as
+slow, 30 % more inertia, and 4 ms of delay (the
+[V&V plan](/control/cascade-vv/#where-it-stands) has the full set).
+
+The rate loop works in angular acceleration, not torque. Its gains have
+units of 1/s, whatever the vehicle weighs, and the inertia turns its output
+into a torque. A heavier vehicle with the same motors keeps the same gains.
+
+## 3. Tilt first, then heading
+
+The tilt points the thrust, so it decides where the vehicle goes. The
+heading does not move the vehicle at all. The attitude loop therefore
+splits each attitude error in two: the tilt that moves the thrust axis, and
+then a turn about it. It runs the tilt at 10 /s and the turn at 5 /s, capped
+at 4 rad/s, and neither part slows the other.
+
+*Before you play:* two vehicles are given the same 30° roll. One of them
+(solid) is also asked to turn 90° about its thrust axis. Which one gets its
+tilt right first?
+
+<TracePlayer
+  trace={tiltYaw}
+  title="Does a large turn slow the tilt down?"
+  description="Two RP-1 vehicles hover at 20 m, each with its own cascade in attitude mode at hover thrust. At 0.1 s both are given a 30° roll. The solid vehicle's target also turns it 90° about the tilted thrust axis, so both targets point the thrust the same way. The tilt errors fall together: 1.8° and 1.7° at 0.3 s, within 2° of the target 2 ms apart. With the same thrust direction the two vehicles drift along the same path, never more than 0.1 m apart. The solid vehicle's heading follows on its own: the yaw-rate setpoint sits at its 4 rad/s limit until about 0.4 s, when 46° are still to turn, and 3° at 1 s. Pass criterion: the turning vehicle's tilt is within 2° of its target no later than the other's, to one attitude-loop period (4 ms)."
+  ghost={{ position: 'tilt_position', attitude: 'tilt_attitude', thrusts: 'tilt_rotor_thrusts', label: 'the vehicle that only tilts' }}
+  plots={[
+    { channel: 'tilt_error', title: 'Tilt error', labels: ['tilt and turn', 'tilt only'], colors: [1, 2] },
+    { channel: 'heading_error', title: 'Heading still to turn', labels: ['tilt and turn'], colors: [1] },
+    { channel: 'rate_setpoint', title: 'Rate setpoints, tilt and turn', labels: ['p_sp', 'q_sp', 'r_sp'], colors: [1, 2, 3] },
+  ]}
+/>
+
+The roll-rate setpoint jumps to 5.2 rad/s at the step, 10 /s times the
+30° (0.52 rad) error. The yaw-rate setpoint sits at its limit, 4 rad/s. A
+controller that worked on Euler angles would mix the two: the turn would
+change the roll and pitch errors as it went, and the tilt would wander.
+Here the tilt error depends on the tilt alone, so it falls exactly as it
+does without the turn.
+
+## 4. Flying a path: the waypoint square
+
+In position mode all four loops run. The position loop turns the position
+error into a velocity setpoint, and the velocity loop turns the velocity
+error into an acceleration. To make an acceleration, the vehicle tilts its
+thrust toward it: the velocity loop hands the attitude loop a tilt and a
+collective thrust.
+
+A loop that only reacts to errors needs an error before it does anything.
+So a setpoint can also carry the velocity and acceleration the path calls
+for, as feed-forward: the position loop adds the velocity to its output,
+and the velocity loop adds the acceleration. The loops then have only the
+difference to correct.
+
+*Before you play:* the setpoint goes around a 10 m square at 5 m/s at
+mid-leg, stopping at each corner, with full feed-forward. The translucent
+vehicle is where the position loop wants the vehicle to be, with the
+attitude it asks for. How far behind it does the vehicle fall?
+
+<TracePlayer
+  trace={waypoint}
+  live="cascade_waypoint"
+  prompt="set the feed-forward to 0 %. Does the vehicle still follow the square, and how far behind the setpoint does it run? Then restore it and raise the peak speed to 8 m/s."
+  title="How closely does the cascade follow a moving setpoint?"
+  description="RP-1 hovers at 5 m at a corner of a 10 m square, in position mode. The setpoint runs around the square, each leg from rest at a corner to 5 m/s at mid-leg and back to rest at the next corner, 4 s per leg, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, drawn with the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and within 0.07 m of the square, and its top speed is 5.1 m/s. To accelerate at 2.5 m/s² it tilts up to 20° into each leg, and the same the other way to stop. Pass criterion: the RMS distance from the square at most 0.3 m, the criterion of reflex#20. It is 0.02 m."
+  ghost={{ position: 'setpoint_position', attitude: 'target_attitude', label: 'the setpoint, at the attitude target' }}
+  plots={[
+    { channel: 'along_track_lag', title: 'Distance behind the setpoint', labels: ['vehicle to setpoint'], colors: [1] },
+    { channel: 'speed', title: 'Speed', labels: ['profile', 'flown'], colors: [4, 1] },
+    { channel: 'tilt', title: 'Tilt', labels: ['target', 'flown'], colors: [4, 1] },
+    { channel: 'cross_track', title: 'Distance from the square', labels: ['cross-track'], colors: [2] },
+  ]}
+/>
+
+Without feed-forward the position loop is the only thing that moves the
+vehicle, and it moves it only once it has fallen behind. At 5 m/s the
+vehicle trails the setpoint by up to 2.7 m and reaches only 4.5 m/s. It
+still stays on the square, within 0.09 m, because each leg is straight and
+ends at rest. Feed-forward fixes the timing, not the path.
+
+At 8 m/s with full feed-forward the profile itself asks for 6.4 m/s², a 33°
+tilt, and the corrections on top reach the 40° tilt limit. The vehicle then
+cannot accelerate as asked. It runs 0.6 m wide of the corners, and the RMS
+error rises to 0.22 m.
+
+## 5. Running out of thrust: a capped climb
+
+Each loop has limits. The velocity setpoint is capped (8 m/s horizontal,
+3 m/s up, 2 m/s down), the tilt at 40°, and the collective between 10 % of
+hover and 80 % of the rotors' full thrust. When a limit cuts, the loop
+inside cannot deliver what the loop outside asks. An integrator that kept
+integrating the error would wind up, and the vehicle would overshoot once
+the limit let go. So the position loop reports each cut, and on the next
+tick the velocity PID on that axis stops integrating in the direction of
+the cut. The mixer's saturation report does the same for the rate loop
+([anti-windup](/control/cascade/#anti-windup)).
+
+*Before you play:* the collective is capped at 1.25 times the weight, and
+the setpoint jumps 10 m up. The velocity loop asks for twice the weight.
+What happens to the vertical integrator while the cap holds, and does the
+vehicle overshoot 15 m?
+
+<TracePlayer
+  trace={climb}
+  title="When the thrust runs out on a climb, does the controller wind up?"
+  description="RP-1 hovers at 5 m in position mode with the collective capped at 12.3 N, 1.25 times its weight, and the climb-rate limit raised to 10 m/s. At 0 s the setpoint moves to 15 m. The velocity setpoint jumps to 10 m/s, and the velocity loop asks for 19.6 N, its own limit of g of acceleration on top of the weight. The position loop cuts the force to the cap for the first 2.2 s, and reports the cut. The vertical integral stays at 0 through the cut. The vehicle accelerates at 2.4 m/s² to 5.6 m/s, then brakes, and reaches 14.9 m at 3.5 s without overshooting. It settles from below, 2 % short at 5 s, because the integral went negative while the vehicle braked and takes several seconds to unwind. In the last plot the uncapped 1 m step, scaled to the same height, overshoots by 3.7 %. Pass criterion: the capped climb overshoots by at most 5 points more than the uncapped step."
+  plots={[
+    { channel: 'height', title: 'Height', labels: ['flown', 'setpoint'], colors: [1, 4] },
+    { channel: 'vertical_velocity', title: 'Climb rate', labels: ['flown', 'setpoint'], colors: [1, 4] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['velocity loop asks', 'commanded', 'cap'], colors: [4, 1, 2] },
+    { channel: 'vertical_integral', title: 'Vertical velocity integral', labels: ['integral'], colors: [3] },
+    { channel: 'step_fraction', title: 'Height as a fraction of the step', labels: ['10 m, capped', '1 m, uncapped'], colors: [1, 2] },
+  ]}
+/>
+
+Two limits hold the integral here: the velocity PID's own output limit, and
+the cut the position loop reports. Either is enough on its own. The report
+matters when the PID is inside its own limit but the force is not, for
+example when the tilt takes the room the collective needed.
+
+## Where to go next
+
+- The [developer guide](/control/cascade/) has the loops, the anti-windup
+  wiring, the default gains, and the API.
+- The [V&V plan](/control/cascade-vv/) lists what is verified, and how.
+- The [deployment guide](/control/cascade-deployment/) covers the
+  configuration and RP-1's values, the loop rates, the modes, the state the
+  cascade needs, the limits, and cost.

@@ -1,0 +1,180 @@
+---
+title: Cascade Deployment
+description: Deployment guide for Cascade. Covers the configuration and RP-1's values, the loop rates, the state the cascade needs, modes, arming and reset, wiring it to the mixer, the limits and what they cut, retuning, cost, and the consumer contract.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import waypoint from '../../../traces/cascade/waypoint.json';
+
+This guide is for integrators who put [`Cascade`](/control/cascade/)
+between a state estimator and the [mixer](/control/mixer/). It covers what
+to set, what the cascade needs from the rest of the stack, and how to wire
+it. The [developer guide](/control/cascade/) has the loops and the API.
+
+## Parameters
+
+`CascadeConfig<T>` is a plain aggregate of the three loops' configs and the
+two dividers. `cascade_config_from(vehicle)` derives all of it from the
+vehicle's `QuadrotorParams`, and `cascade_config_valid()` (I1) must hold
+before a cascade is built. For RP-1 (1 kg, J = (0.003, 0.003, 0.005) kg·m²,
+motor lag τ = 20 ms, 12 N per rotor):
+
+| Field | RP-1 | Unit | From |
+|---|---|---|---|
+| `rate.inertia` | 0.003, 0.003, 0.005 | kg·m² | the vehicle's J |
+| `rate.axis[i].kp` | 50 | 1/s | 1/τ |
+| `rate.axis[i].kd` | 0.4 | 1 | 2·0.7 − 1 |
+| `rate.axis[i].ki` | 250 | 1/s² | k_p·ω_n/10 |
+| `rate.axis[i].derivative_tau` | 2 | ms | τ/10 |
+| `rate.axis[i].output_max` | 622, 622, 76.8 | rad/s² | the full differential thrust over J |
+| `rate.axis[i].integral_max` | 156, 156, 19.2 | rad/s² | a quarter of the output limit |
+| `attitude.gain` | 10, 10, 5 | 1/s | ω_n/5, and ω_n/10 for yaw |
+| `attitude.max_rate` | 10, 10, 4 | rad/s | fixed |
+| `position.position_gain` | 1.56 | 1/s | ω_n/32 |
+| `position.velocity[i].kp`, `.ki` | 3.57, 1.28 | 1/s, 1/s² | ω_n/14, k_v²/10 |
+| `position.velocity[i].output_max`, `.integral_max` | 9.81, 4.90 | m/s² | g, g/2 |
+| `position.max_speed_xy`, `_up`, `_down` | 8, 3, 2 | m/s | fixed |
+| `position.max_tilt` | 0.7 (40°) | rad | fixed |
+| `position.min_thrust`, `max_thrust` | 0.98, 38.4 | N | 10 % of hover; 80 % of 4·T_max |
+| `attitude_divider`, `position_divider` | 4, 20 | ticks | 250 Hz and 50 Hz at a 1 kHz rate loop |
+
+Every row is a derived default; set a field directly to override it. The
+motor lag and the inertia matter most: the rate loop's gains come from τ,
+and its torque from J. Measure both on your vehicle (τ from a step on a
+thrust stand, J from a swing test or CAD) rather than keep RP-1's.
+
+## Loop rates
+
+The defaults assume a 1 kHz rate loop: call `update()` once per tick with dt
+= 1 ms. Another rate-loop period works as long as dt is what you pass: the
+PIDs integrate over dt, and the position loop over `dt · position_divider`.
+Keep the outer loops at about 250 Hz and 50 Hz when you change it, by
+changing the dividers: the gains assume each loop is sampled well above its
+bandwidth. `position_divider` must be a multiple of `attitude_divider`.
+
+## The state the cascade needs
+
+`VehicleState` is position and velocity in the world frame (z up, m and
+m/s), the attitude as a body-to-world unit quaternion, and the body rates in
+rad/s. It comes from your estimator. The cascade does no filtering of its
+own, beyond the rate loop's derivative filter, and the closed-loop tests
+feed it the true state. So:
+
+- **Body rates** should be the gyro, filtered for the motors' noise (see the
+  [RPM notch](/dsp/filters/)), with as little delay as you can manage. The
+  rate loop is the fastest loop, and delay there costs phase margin first.
+- **Delay.** The tests show the loops stay stable, with at most 25 %
+  overshoot, with 4 ms of command delay combined with slower motors and more
+  inertia. Treat 4 ms end to end as the budget, and measure your stack's.
+- **Frames.** A state in another convention (NED, FRD) must be converted
+  before it reaches the cascade. A wrong sign on one axis turns its loop
+  into positive feedback.
+
+## Modes, arming, and reset
+
+- **Position mode** (`update(x, PositionSetpoint, dt)`) for autonomous
+  flight. Give the setpoint the path's velocity and acceleration as
+  feed-forward when you have them: without it the vehicle trails the
+  setpoint (2.7 m on the explainer's square at 5 m/s).
+- **Attitude mode** (`update(x, AttitudeTarget, dt)`) for a pilot's angle
+  mode, or for an outer loop of your own. You supply the collective thrust.
+- **Switching** from attitude to position mode resets the position loop, so
+  the vehicle flies toward the position setpoint from where it is, with
+  fresh integrators. Set the setpoint to the current position at the switch
+  if you want it to hold.
+- **Arming.** Call `reset()` when the vehicle arms. On the ground the loops'
+  integrators wind up against the ground's reaction, and the mixer spins the
+  rotors up whenever torque is asked for (airmode). Hold the cascade reset,
+  and the motors at idle, until take-off; see the mixer's
+  [arming and idle](/control/mixer-deployment/#arming-idle-and-the-ground).
+
+## Wiring it into a loop
+
+Once per rate tick, in this order:
+
+```cpp
+const control::Wrench<double> w = cascade.update(state, setpoint, dt);
+const control::MixerOutput<double> out = mixer.mix(w);
+cascade.feedback(out);  // the integrators see this tick's cuts next tick
+const model::RotorCommand<double> u = mixer.to_rotor_command(out.thrusts);
+esc.write(u);
+```
+
+Call `feedback()` with the result of mixing the wrench `update()` just
+returned, before the next `update()`. Without it the rate integrators wind
+up while the mixer cuts, and the vehicle overshoots once the cut ends.
+
+<TracePlayer
+  trace={waypoint}
+  title="What does the cascade fly from a setpoint with feed-forward?"
+  description="The waypoint square of the explainer: a 10 m square at 5 m height, each leg from rest to 5 m/s and back in 4 s, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, at the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and 0.07 m of the square. Pass criterion: the RMS distance from the square at most 0.3 m, the criterion of reflex#20. It is 0.02 m."
+  ghost={{ position: 'setpoint_position', attitude: 'target_attitude', label: 'the setpoint, at the attitude target' }}
+  plots={[
+    { channel: 'along_track_lag', title: 'Distance behind the setpoint', labels: ['vehicle to setpoint'], colors: [1] },
+    { channel: 'tilt', title: 'Tilt', labels: ['target', 'flown'], colors: [4, 1] },
+  ]}
+/>
+
+## Limits and what they cut
+
+| Limit | RP-1 | When it cuts | What holds the integrators |
+|---|---|---|---|
+| Horizontal speed setpoint | 8 m/s | a far position setpoint | (a velocity setpoint, not integrated) |
+| Climb and descent speed | 3, 2 m/s | a far vertical setpoint | (as above) |
+| Collective thrust | 0.98 to 38.4 N | a hard climb or descent | the cut, on the next position tick |
+| Tilt | 40° | a hard horizontal acceleration | the cut, on the next position tick |
+| Velocity-loop acceleration | ±g per axis | a large velocity error | the PID's own output limit |
+| Body-rate setpoint | 10, 10, 4 rad/s | a large attitude error | (a rate setpoint, not integrated) |
+| Angular acceleration | 622, 622, 76.8 rad/s² | a large rate error | the PID's own output limit |
+| Rotor thrust, in the mixer | 0 to 12 N | any of the above at the edges | the mixer's report, through `feedback()` |
+
+The collective limit leaves 20 % of the rotors' thrust free for torque, so
+in position mode the mixer keeps room for the tilt even at the top of the
+collective. In attitude mode
+your collective goes straight to the mixer, so a full-throttle command
+leaves the mixer to give up yaw, and then the collective, to keep the tilt.
+
+## Retuning
+
+Change the gains when the vehicle differs from what `cascade_config_from()`
+assumes: a different motor lag, a different airframe stiffness, or a
+measured delay larger than 4 ms. Keep the ratios between the loops: each
+loop at most about a fifth as fast as the one inside it. The
+[roll-step widget](/control/cascade-explainer/#2-the-inner-loops-a-roll-step)
+shows what happens when the attitude and rate gains come close. Check the
+result with `cascade_config_valid()`, and fly the closed-loop tests in
+`tests/sdk/cascade_closed_loop.cpp` against your vehicle's `QuadrotorParams`
+before you fly.
+
+A vehicle with a thrust-to-weight ratio of 1.25 or less cannot hover inside
+the derived collective limit, and `cascade_config_from()` returns an invalid
+config for it. Raise `position.max_thrust` only if you accept less torque
+authority at the top of the throttle.
+
+## Cost
+
+About 16 ns per rate-loop tick on x86, for float and double alike
+(`bench/cascade_bench`, GCC 15.2 Release, i7-12700K), averaged over the
+schedule: a rate update costs about 8 ns, an attitude update 4 ns, and a
+position update 40 ns. The operation count of each tick kind is bounded,
+over generated states and setpoints (`tests/sdk/cascade_resource.cpp`): a
+rate-only tick runs 72 arithmetic operations, an attitude tick at most 122
+and one square root, and a position tick at most 302 and ten calls (square
+roots, sine, and cosine). Measure on the flight processor before budgeting.
+
+## Scalar types
+
+The unit tests and three of the closed-loop tests (hover hold, the 30° roll
+step, and the 1 m steps) run in double and float. The cascade uses
+`+ − × ÷`, comparisons, `sqrt`, `sin`, `cos`, and `isfinite`.
+
+## Consumer contract
+
+| | |
+|---|---|
+| Preconditions | `cascade_config_valid(cfg)` at construction; a finite state with a unit attitude; a finite setpoint; dt > 0, else the last wrench is returned unchanged |
+| Postconditions | A wrench whose thrust is the target's; rate setpoints within their limits; in position mode, the target's thrust within the collective limits and its tilt within the tilt limit |
+| Faults | None reported: a precondition violation is an `assert` in Debug builds, and dt ≤ 0 holds the output |
+| State | Each loop's PID integrators and held outputs, the tick counter, the mode, and the stored mixer report; `reset()` clears them |
+| Resources | No allocation, no exceptions, no system calls; a bounded operation count per tick kind |
+| Not provided | Sensor filtering or estimation, arming and idle, throttle-PID attenuation, I-term relax, gain scheduling, INDI, drag compensation, setpoint differentiation, staleness handling of an external rate command |

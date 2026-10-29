@@ -31,6 +31,7 @@
 //   mixer_clip_vs_priority  p0 = throttle [1]
 
 #include "cascade/roll_step.hpp"
+#include "cascade/waypoint.hpp"
 #include "mixer/clip_vs_priority.hpp"
 #include "mixer/priority.hpp"
 #include "pid/derivative_filter.hpp"
@@ -71,6 +72,9 @@ branes::reflex::trace::Trace dispatch(std::string_view scenario, double p0, doub
     }
     if (scenario == "roll_step") {
         return sc::roll_step::run({.attitude_gain = p0, .rate_gain = p1});
+    }
+    if (scenario == "cascade_waypoint") {
+        return sc::cascade_waypoint::run({.speed = p0, .feedforward = p1});
     }
     if (scenario == "pid_terms") {
         return sc::pid_terms::run({.kp = p0, .ki = p1, .kd = p2});

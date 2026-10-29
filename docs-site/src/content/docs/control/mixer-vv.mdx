@@ -1,0 +1,162 @@
+---
+title: Mixer V&V Plan
+description: Where Mixer stands against the building block standard, the animations that illustrate its checks, the evidence ledger, and the milestones that take it to grade A.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import priority from '../../../traces/mixer/priority.json';
+import throttleSweep from '../../../traces/mixer/throttle_sweep.json';
+import clipVsPriority from '../../../traces/mixer/clip_vs_priority.json';
+
+This plan takes [`Mixer`](/control/mixer/) to grade **A** under the
+[building block standard](/standards/building-blocks/). It lists where the
+mixer stands against each requirement, the animations that illustrate its
+checks, the evidence ledger, and a sequence of PRs.
+
+**Scope.** The mixer is an algebraic map with no state: an exact linear
+allocation, then a saturation priority. Its specification is the
+allocation and the priority's postconditions, so there is no continuous
+model to converge to. Verification checks that it computes the inverse
+exactly, that its output meets the postconditions everywhere in the demand
+space, and that its priority behaves as specified in closed loop. Whether
+the priority suits a vehicle's flying is the business of the loops around
+it, the [cascade](/control/cascade/) above all.
+
+**Consumers.** The cascade's output stage in racing-drone's B0 baseline:
+`mix()` once per rate tick at 1 kHz, its report fed back to the rate and
+velocity loops, and `to_rotor_command()` to the ESCs.
+
+## Where it stands
+
+Assessment on 2026-10-28, against commit `e9f3eab`.
+
+| Req | Status | Evidence today / gap |
+|---|---|---|
+| S1 spec | ✅ | Conventions, the allocation and its inverse, the priority as three lexicographic steps, data model, I1–I2, and pre/postconditions on every operation in `mixer.hpp` |
+| S2 envelope | ◐ | The non-goals are stated (arming and idle, battery sag) but scattered. Quad X only, and one fixed priority, are not written down as an envelope |
+| S3 parameters | ✅ | `mixer_params_valid` rejects a zero arm, a NaN coefficient, a negative T_min, and T_min = T_max (`tests/sdk/mixer.cpp`); units on every field; `mixer_params_from()` derives them from the vehicle |
+| S4 scalar types | ◐ | Every test runs in double and float. No posit or cfloat; the minimum precision is not stated |
+| S5 resource | ◐ | No allocation, no exceptions, and constant time, stated in the header. `mix()` runs 47 operations, +1 when roll and pitch scale, +1 for a yaw demand, and +2 for each rounding guard of the clamp, at most 53, with no calls, over 4000 generated demands that reach every stage of the priority and the guard; `allocate()` 14, `wrench()` 15, `to_rotor_command()` 4 and four square roots (`tests/sdk/mixer_resource.cpp`). `allocate()`, `wrench()`, and `mix()` are not marked `noexcept` |
+| T1 unit | ✅ | The round trip, the geometry's signs, the identity inside the limits, each corner of the priority, yaw that relieves a saturation, a postcondition sweep over 800 demands with T_min > 0, continuity across the boundary, and the rotor commands (`tests/sdk/mixer.cpp`); the saturation report (`tests/sdk/cascade.cpp`) |
+| T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
+| T3 sanitizers | ❌ | No sanitizer preset |
+| T4 properties | ❌ | The postcondition sweep is a fixed grid, not generated |
+| T5 fuzzing | ❌ | — |
+| T6 coverage | ❌ | Not measured |
+| T7 mutation | ❌ | — |
+| V1 analytic | ✅ | `wrench(allocate(w)) == w` and `allocate(wrench(t)) == t` to rounding; the thrust from each rotor matches the model's wrench (`tests/sdk/mixer.cpp`) |
+| V2 order | N/A | No discretization: the map is the specification |
+| V3 structure | ◐ | I1 is asserted at construction. The postconditions are tested, not asserted after each `mix()` in Debug builds |
+| V4 metamorphic | ❌ | Mirror symmetry (y → −y swaps rotors 0 ↔ 2 and 1 ↔ 3) and sign symmetry of the demand are not tested |
+| V5 derivatives | N/A | No consumer linearizes the mixer |
+| V6 code-to-code | ❌ | No comparison with PX4's or Betaflight's airmode mixer |
+| V7 stability | N/A | No dynamics |
+| C1–C5 | ◐ | `bench/mixer_bench` gives ns per `mix()` and `allocate()` call on x86; nothing else |
+| D1–D3 | ◐ | Three trace scenarios in `tools/trace/scenarios/mixer/`, regenerated and compared in CI (ANI-3); no scenario runner, monitor, or MCAP |
+| L1–L5 | N/A | The mixer has no physical counterpart apart from the rotors, which the model covers |
+| BB-I1–I6 | ◐ | The cascade's closed-loop tests fly through the mixer on the quadrotor model; the clip comparison below is a trace scenario, not a test. No `sim/` harness |
+| R1 | ✅ | release-please semver |
+| R4 | ◐ | The committed traces pin three scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
+| R2, R3 | ❌ | — |
+
+**Grade today: C.** S1, S3, T1, and T2 are met, with `bench/mixer_bench`
+as the benchmark. S5's structural part is met, as for the
+[quadrotor model](/model/quadrotor-vv/): the operation count is tested and
+the header states that no operation allocates or throws. Marking the
+operations `noexcept`, in M2, completes it.
+
+## Animations
+
+These animations illustrate three of the requirements above. Each plays a
+trace from a scenario in `tools/trace/scenarios/mixer/`, and each scenario
+computes the check shown under its player. They are not the evidence for
+the requirement (ANI-4): the tests are, and the status table follows them.
+
+### The priority's postcondition (BB-T1)
+
+`mix()` promises that the achieved torque is the demand scaled by σ for
+roll and pitch and by s for yaw: the direction of roll and pitch is kept,
+whatever is cut. The scenario checks it at every sample of a demand that
+crosses all three stages of the priority.
+
+<TracePlayer
+  trace={priority}
+  title="Is the achieved torque always the demand, scaled?"
+  description="The mixer is asked for F = 36 N and τz = 0.1 N·m while the roll demand ramps from 0 to 2.5 N·m over 5 s. Yaw gives way from 0.9 s, the collective from 1.88 s, and roll from 3.74 s, where σ starts to fall below 1. Through all three the achieved roll is σ times the demand and the achieved yaw s times its demand. Pass criterion: the largest difference, over the three axes and every sample, at most 1e-12 N·m. It is 4.4e-16 N·m, two units of rounding."
+  plots={[
+    { channel: 'roll_torque', title: 'Roll torque', labels: ['demanded', 'achieved'], colors: [4, 1] },
+    { channel: 'yaw_torque', title: 'Yaw torque', labels: ['demanded', 'achieved'], colors: [4, 2] },
+    { channel: 'scales', title: 'σ and s', labels: ['σ, roll and pitch', 's, yaw'], colors: [1, 2] },
+  ]}
+/>
+
+### Continuity across the boundaries (BB-T1)
+
+The unit test `the output is continuous across the saturation boundary`
+walks the collective through the point where the top rotor reaches T_max,
+and requires no thrust to step by more than the demand does. The scenario
+sweeps the whole throttle range, through all four boundaries.
+
+<TracePlayer
+  trace={throttleSweep}
+  title="Does any rotor jump where the mixer starts or stops cutting?"
+  description="τ = (0.5, 0.2, 0.1) N·m held, and the collective demand F swept from 0 to 52 N over 6.5 s, 0.2 N per sample. The mixer crosses four boundaries: airmode ends at 9 N, yaw is whole from 15.4 N, yaw gives way at 38 N, and the collective is held from 41.6 N. The rotor thrusts bend at each and do not jump. Pass criterion: between samples, no rotor's thrust steps by more than the collective demand's step. The largest ratio is 0.5. Where nothing is cut, each rotor moves at a quarter of the demand's rate. While yaw comes back (9 to 15.4 N) and while it gives way (38 to 41.6 N), one diagonal pair carries the whole change, at half the rate."
+  plots={[
+    { channel: 'thrusts', title: 'Rotor thrust', labels: ['0 FR', '1 RL', '2 FL', '3 RR'], colors: [1, 2, 3, 4],
+      series: [{ channel: 'thrust_limits', component: 1, label: 'T_max', color: 4, dashed: true }] },
+    { channel: 'scales', title: 'σ and s', labels: ['σ, roll and pitch', 's, yaw'], colors: [1, 2] },
+  ]}
+/>
+
+### The priority in closed loop (BB-I2)
+
+The priority is chosen so that the tilt survives saturation. The scenario
+flies the cascade through `mix()` and through per-rotor clipping, at full
+throttle with a tilt and a yaw demanded at once.
+
+<TracePlayer
+  trace={clipVsPriority}
+  title="Does the tilt settle when every rotor is saturated?"
+  description="Two RP-1 vehicles at 50 m, each with its own cascade in attitude mode, are given yaw 60° and roll 30° at a collective of 48 N. With mix() and its report, the tilt error is within 3° from 0.15 s after the step, and the heading lags. With per-rotor clipping, the tilt wobbles up to 5° off until 0.77 s after the step. Pass criterion: from 0.2 s after the step on, the mix() run's tilt error within 3°, 10 % of the step, the band of the cascade's closed-loop roll step. It is 1.4°."
+  ghost={{ position: 'clip_position', attitude: 'clip_attitude', thrusts: 'clip_rotor_thrusts', label: 'the clipped run' }}
+  thrustScale={0.02}
+  plots={[
+    { channel: 'tilt_error', title: 'Tilt error', labels: ['mix()', 'clipped'], colors: [1, 2] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['mix()', 'clipped'], colors: [1, 2],
+      series: [{ channel: 'collective_demand', label: 'demanded', color: 4, dashed: true }] },
+  ]}
+/>
+
+## Evidence ledger
+
+| Claim | Evidence | Harness | Gate |
+|---|---|---|---|
+| The allocation is the exact inverse of the rotor geometry | Round trip both ways; sign of each rotor's contribution | `tests/sdk/mixer` | PR |
+| The thrusts make the wrench the model flies | Model derivative at the commanded speeds | `tests/sdk/mixer` | PR |
+| A demand that fits comes back unchanged | Three demands inside the limits | `tests/sdk/mixer` | PR |
+| Every output meets the postconditions | Sweep over 800 demands, T_min > 0 | `tests/sdk/mixer` | PR |
+| The priority gives way in its order | A case at each corner; yaw that relieves a saturation kept | `tests/sdk/mixer` | PR |
+| The output is continuous in the demand | Collective walk across T_max; trace check over the full range | `tests/sdk/mixer`, `mixer/throttle_sweep` | PR |
+| The report flags each cut in the demand's direction | One case per channel and direction | `tests/sdk/cascade` | PR |
+| The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
+| The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
+| A bounded operation count per call | Counted-type test over generated demands | `tests/sdk/mixer_resource` | PR |
+| The cost per call | Benchmark | `bench/mixer_bench` | — |
+| Mirror and sign relations hold | Metamorphic tests (M2) | `tests/verification/mixer_metamorphic` | PR |
+
+The last row is planned.
+
+## Milestones
+
+| # | PR scope | Requirements | Grade after |
+|---|---|---|---|
+| M1 ✅ | `tests/sdk/mixer_resource.cpp`: the operation count of every operation with `Counted`, bounded over generated demands; `bench/mixer_bench.cpp`: `mix()` and `allocate()` per call, double and float | S5, C | **C** |
+| M2 | `noexcept` on `allocate()`, `wrench()`, and `mix()`; envelope and non-goals in the header; posit and cfloat runs, and the minimum precision; postconditions asserted after `mix()` in Debug builds; metamorphic tests; sanitizer preset | S2, S4, V3, V4, T3 | — |
+| M3 | Property tests: for generated parameters and demands, the postconditions and continuity; golden traces in `tests/` | T4, R4 | **B** |
+| M4 | Fuzz target for `mix()`; coverage report; comparison with PX4's airmode mixer on shared demands | T5, T6, V6 | B |
+| M5 | Datasheet: the attainable torque set against the collective, the cost per type and compiler, the clip comparison across the throttle range; scenario runner and monitor | C1–C4, D1–D3 | B |
+| M6 | The mixer in the `sim/` scenario suite through the cascade | BB-I1, BB-I2, BB-I4 | **A** |
+
+M1 gave the mixer the grade the cascade built on it already has. M6 shares the `sim/` harness
+with the [PID's M6](/control/pid-vv/#milestones) and the
+[quadrotor model's M9](/model/quadrotor-vv/#milestones).

@@ -1,0 +1,159 @@
+---
+title: Mixer Deployment
+description: Deployment guide for Mixer. Covers the parameters and RP-1's values, the torque and thrust envelope they give, choosing a minimum thrust, arming and idle, wiring the mixer and its saturation report into a loop, rotor commands and the battery, and cost.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import priority from '../../../traces/mixer/priority.json';
+
+This guide is for integrators who put [`Mixer`](/control/mixer/) between
+the control loops and the motors. It covers what to set, what the vehicle
+can then do, and how to wire the mixer into a loop. The
+[developer guide](/control/mixer/) has the allocation, the priority, and
+the API.
+
+## Parameters
+
+`MixerParams<T>` is a plain aggregate. `mixer_params_valid()` (I1) must hold
+before a mixer is built: every value finite, L, k_m, and k_f positive, and
+0 ≤ T_min < T_max.
+
+| Field | Unit | RP-1 | What it sets |
+|---|---|---|---|
+| `arm_length` | m | 0.11 | L, centre to rotor axis; the roll and pitch arm is a = L/√2 |
+| `torque_coefficient` | m | 0.016 | k_m: a rotor's drag torque per newton of thrust |
+| `thrust_coefficient` | N/(rad/s)² | 8.9e-7 | k_f in T = k_f·ω², for `to_rotor_command()` |
+| `min_thrust` | N | 0 | T_min per rotor |
+| `max_thrust` | N | 12 | T_max per rotor |
+
+`mixer_params_from(vehicle)` copies L, k_m, k_f, and T_max from the
+`QuadrotorParams` the model flies, and sets T_min = 0. Measure k_m and k_f
+on a thrust stand for your motor, propeller, and battery: k_m sets how much
+thrust difference a yaw torque costs, and k_f how fast the rotors spin for
+a thrust.
+
+## What the vehicle can do
+
+The parameters fix the wrench the rotors can make. For RP-1:
+
+| Demand alone | Limit | Needs a collective of |
+|---|---|---|
+| Collective thrust | 4·T_max = 48 N, 4.9 g for 1 kg | — |
+| Roll or pitch torque | 2a·(T_max − T_min) = 1.87 N·m, 622 rad/s² | 2·(T_max + T_min) = 24 N |
+| Roll and pitch together, diagonally | 0.93 N·m on each axis, 1.32 N·m in all | 24 N |
+| Yaw torque | 2k_m·(T_max − T_min) = 0.38 N·m, 77 rad/s² | 24 N |
+| Yaw torque at hover (9.81 N) | 4k_m·(F/4 − T_min) = 0.16 N·m | — |
+
+A diagonal tilt has less authority because it uses only one diagonal pair
+of rotors. Yaw has the least: k_m is a fifth of the moment arm. The
+cascade's rate-loop output limits, 622 rad/s² for roll and pitch and
+76.8 rad/s² for yaw, are these limits divided by the inertia.
+
+Away from a collective of 24 N, the room shrinks. Near full throttle the
+mixer lowers the collective to keep the tilt, and near zero it raises it.
+
+<TracePlayer
+  trace={priority}
+  title="How much roll can RP-1 get, and at what collective?"
+  description="The mixer is asked for F = 36 N and τz = 0.1 N·m while the roll demand ramps from 0 to 2.5 N·m. It gives up the yaw first, by 1.88 s, and then lowers the collective to keep the roll whole. At 3.74 s the roll demand reaches 1.87 N·m, 2a·(T_max − T_min): rotors 1 and 2 at 12 N, rotors 0 and 3 at 0 N, and the collective at 24 N. Beyond that no collective has room, and the delivered roll stays at 1.87 N·m while the demand grows."
+  plots={[
+    { kind: 'bars', channel: 'thrusts', title: 'Rotor thrust at the cursor', labels: ['0 FR', '1 RL', '2 FL', '3 RR'],
+      label: 'mix()', marker: { channel: 'allocation', label: 'allocate(), no limits' },
+      limits: { channel: 'thrust_limits', label: 'T_min, T_max' } },
+    { channel: 'roll_torque', title: 'Roll torque', labels: ['demanded', 'achieved'], colors: [4, 1] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['demanded', 'achieved'], colors: [4, 3] },
+  ]}
+/>
+
+## Choosing the minimum thrust
+
+T_min is the least thrust the mixer will command. With T_min = 0 the mixer
+may stop a rotor in flight, when the tilt needs it at the bottom of the
+throttle. Many ESCs and motors cannot restart a stopped rotor quickly, and
+some lose sync. Set T_min to the thrust at the motor's reliable idle speed,
+measured on the stand, when that matters for your hardware.
+
+T_min costs authority: every limit in the table above scales with
+T_max − T_min. With T_min = 0.5 N, roll and pitch get 1.79 N·m rather than
+1.87 N·m. Airmode keeps working: the collective rises until the lowest
+rotor sits at T_min.
+
+## Arming, idle, and the ground
+
+The mixer raises the collective whenever roll or pitch need it, even with
+the throttle at zero (airmode). So it will spin the rotors up on the ground
+if the loops ask for torque, and on the ground the loops' integrators wind
+up against the ground's reaction. The mixer has no notion of armed,
+landed, or idle: the state machine around it does.
+
+- **Disarmed:** do not call `mix()`. Command the motors off directly.
+- **Armed on the ground:** command idle directly, or hold the loops'
+  integrators reset and their outputs at zero until take-off.
+- **In flight:** call `mix()` every rate tick.
+
+## Wiring it into a loop
+
+Once per rate tick, in this order:
+
+```cpp
+const control::Wrench<double> w = cascade.update(state, setpoint, dt);
+const control::MixerOutput<double> out = mixer.mix(w);
+cascade.feedback(out);  // the integrators see this tick's cuts next tick
+const model::RotorCommand<double> u = mixer.to_rotor_command(out.thrusts);
+esc.write(u);           // in Quad X order: 0 FR, 1 RL, 2 FL, 3 RR
+```
+
+- **Report the cuts.** `feedback()` keeps `saturation_from(w, out)`, and on
+  the next tick the cascade's PIDs freeze their integrals on the axes the
+  mixer cut (see [anti-windup](/control/cascade/#anti-windup)). Without it their integrators wind up
+  against the mixer while it cuts, and the vehicle overshoots once the cut
+  ends (the PID's
+  [external saturation](/control/pid-deployment/#external-saturation)).
+  A loop of your own should do the same with the report.
+- **Rotor order.** The thrusts come out in PX4's Quad X order with PX4's
+  spin directions. If your frame's motor outputs are numbered differently,
+  permute after `to_rotor_command()`, and check each motor's spin direction
+  against the table in the [developer guide](/control/mixer/#allocation):
+  a reversed motor turns a yaw command into its opposite.
+- **Only Quad X.** Other frames (H, plus, hexacopters) need a different
+  allocation; this mixer does not take one.
+
+## Rotor commands and the battery
+
+`to_rotor_command()` inverts T = k_f·ω² with k_f for a full battery. As the
+battery sags, the same speed command gives less thrust, and the loops make
+up the difference through their errors and integrals. What the mixer
+reports is a cut of the *commanded* thrust. A rotor that cannot reach its
+command, because of a sagging battery or the motor's lag (τ = 20 ms on
+RP-1), is not in the report. The loops see that only through the vehicle's
+response.
+
+## Cost
+
+About 19 ns per `mix()` call and 3 ns per `allocate()` on x86, for float
+and double alike (`bench/mixer_bench`, GCC 15.2 Release, i7-12700K; 15 to
+17 ns for `mix()` with Clang 21), over demands that sweep the throttle range
+and take every stage of the priority.
+The operation count is bounded, with no calls
+(`tests/sdk/mixer_resource.cpp`): `mix()` runs 47 arithmetic operations,
+one more when roll and pitch scale and one more for a yaw demand, and two
+more for each time rounding leaves one of its intervals empty, at most 53.
+`allocate()` runs 14, and `to_rotor_command()` 4 divisions and four square
+roots. Measure on the flight processor before budgeting.
+
+## Scalar types
+
+The tests run in double and float, with tolerances by precision. The mixer
+uses `+ − × ÷`, comparisons, `abs`, `isfinite`, and, in `to_rotor_command()`
+and the constructor, `sqrt`.
+
+## Consumer contract
+
+| | |
+|---|---|
+| Preconditions | `mixer_params_valid(p)` at construction; a finite wrench; finite, non-negative thrusts for `to_rotor_command()` |
+| Postconditions | Every thrust within [T_min, T_max]; the achieved torque is (στx, στy, sτz) with σ ∈ (0, 1], s ∈ [0, 1]; a demand that fits comes back unchanged |
+| Faults | None reported: a precondition violation is an `assert` in Debug builds |
+| State | None: the mixer holds only its parameters and values derived from them |
+| Resources | No allocation; at most 53 arithmetic operations per `mix()`, with no calls; `saturation_from()` is `noexcept` |
+| Not provided | Arming and idle, frames other than Quad X, battery compensation, motor-lag compensation, a configurable priority |

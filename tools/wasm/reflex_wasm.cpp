@@ -27,8 +27,12 @@
 //   pid_terms   p0, p1, p2 = k_p [1/s²], k_i [1/s³], k_d [1/s]
 //   pid_derivative_filter  p0 = derivative_tau [s]
 //   pid_windup  p0 = k_i [1/s], p1 = hold time [s]
+//   mixer_priority  p0 = throttle [1], p1 = yaw torque [N·m]
+//   mixer_clip_vs_priority  p0 = throttle [1]
 
 #include "cascade/roll_step.hpp"
+#include "mixer/clip_vs_priority.hpp"
+#include "mixer/priority.hpp"
 #include "pid/derivative_filter.hpp"
 #include "pid/terms.hpp"
 #include "pid/windup.hpp"
@@ -76,6 +80,12 @@ branes::reflex::trace::Trace dispatch(std::string_view scenario, double p0, doub
     }
     if (scenario == "pid_windup") {
         return sc::pid_windup::run({.ki = p0, .hold = p1});
+    }
+    if (scenario == "mixer_priority") {
+        return sc::mixer_priority::run({.throttle = p0, .yaw = p1});
+    }
+    if (scenario == "mixer_clip_vs_priority") {
+        return sc::mixer_clip_vs_priority::run({.throttle = p0});
     }
     throw std::invalid_argument("unknown scenario " + std::string(scenario));
 }

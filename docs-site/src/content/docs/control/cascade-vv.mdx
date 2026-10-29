@@ -1,0 +1,179 @@
+---
+title: Cascade V&V Plan
+description: Where Cascade stands against the building block standard, the animations that illustrate its checks, the evidence ledger, and the milestones that take it to grade A.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import schedule from '../../../traces/cascade/schedule.json';
+import tiltYaw from '../../../traces/cascade/tilt_yaw.json';
+import climb from '../../../traces/cascade/climb.json';
+
+This plan takes [`Cascade`](/control/cascade/) to grade **A** under the
+[building block standard](/standards/building-blocks/). It lists where the
+cascade stands against each requirement, the animations that illustrate its
+checks, the evidence ledger, and a sequence of PRs.
+
+**Scope.** The cascade is a controller defined in discrete time: four loops
+on a fixed schedule, with PIDs, limits, and an attitude law. There is no
+continuous model to converge to, so verification checks that each loop
+computes its law exactly, that the limits and invariants hold for any
+input, and that the loops together fly the closed-loop criteria stated
+before the tests ran. That closed-loop evidence rests on the
+[quadrotor model](/model/quadrotor/) as the plant, which has no independent
+reference yet. It is design verification on a nominal plant. Validation
+needs flight data (L1–L4, I3).
+
+**Consumers.** racing-drone's B0 baseline: `update()` once per 1 kHz rate
+tick in position and attitude mode, its wrench to `mix()`, and the mixer's
+report back through `feedback()`.
+
+## Where it stands
+
+Assessment on 2026-10-28, against commit `cf944fb`.
+
+| Req | Status | Evidence today / gap |
+|---|---|---|
+| S1 spec | ✅ | Each loop's law, data model, invariants (I1–I4 for the cascade, I1–I4 for the position loop, I1–I3 for the rate loop), and pre/postconditions on every operation, in `cascade.hpp`, `position.hpp`, `attitude.hpp`, and `rate.hpp` |
+| S2 envelope | ◐ | Thrust-to-weight above 1.25 is stated and tested. The rest (true state, a 4 ms delay budget, Quad X through the mixer) is on the pages, not in the header |
+| S3 parameters | ✅ | A validator per loop, each tested with every violation; `cascade_config_valid` rejects bad dividers; the derived defaults are valid iff thrust-to-weight exceeds 1.25 (`tests/sdk/cascade.cpp`) |
+| S4 scalar types | ◐ | The unit tests and three closed-loop tests run in double and float. No posit or cfloat; the minimum precision is not stated |
+| S5 resource | ◐ | No allocation, no exceptions, no data-dependent loops, stated in the header. A bounded operation count per tick kind (72 rate-only, ≤ 122 attitude, ≤ 302 position) over generated states and setpoints (`tests/sdk/cascade_resource.cpp`). `update()` is not marked `noexcept` |
+| T1 unit | ✅ | Each loop: the torque law, limits for any demand, cuts in the demand's direction, sign invariance, the tilt/yaw split, dt ≤ 0 holds; the cascade: the dividers, attitude mode, switching modes, feedback (`tests/sdk/cascade.cpp`) |
+| T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
+| T3 sanitizers | ❌ | No sanitizer preset |
+| T4 properties | ◐ | The position loop's limits over 4000 generated demands, states, and attitudes. No generated vehicles or configs, and no closed-loop properties |
+| T5 fuzzing | ❌ | — |
+| T6 coverage | ❌ | Not measured |
+| T7 mutation | ❌ | — |
+| V1 analytic | ✅ | τ = J·α + ω × Jω exactly; small rate steps and a small vertical step on the model match hand-derived inertia-and-lag and mass-and-lag plants to 1 % of the step (`tests/sdk/cascade_closed_loop.cpp`) |
+| V2 order | N/A | Defined in discrete time: the sampled law is the specification |
+| V3 structure | ✅ | The invariants are asserted after every tick in Debug builds |
+| V4 metamorphic | ◐ | q → −q gives the same output, unit-tested and flown through a 180° roll. Mirror symmetry and invariance under a rotation of the world about z are not tested |
+| V5 derivatives | N/A | No consumer linearizes the cascade |
+| V6 code-to-code | ❌ | No comparison with PX4's multicopter controllers |
+| V7 stability | ✅ | Rate-loop phase margin, computed from its transfer function: ≥ 45° nominal, ≥ 30° with the motors twice as slow, 30 % more inertia, and 4 ms more delay. Stable with ≤ 25 % overshoot at each of 32 plant corners (inertia ±30 %, mass ±20 %, motor lag ×0.5 to ×2, thrust coefficient ±10 %, 0 or 4 ms delay), each flown with a roll step and an x step |
+| C1–C5 | ◐ | `bench/cascade_bench` gives ns per tick and per loop on x86; nothing else |
+| D1–D3 | ◐ | Five trace scenarios in `tools/trace/scenarios/cascade/`, regenerated and compared in CI (ANI-3); no scenario runner, monitor, or MCAP |
+| L5 | ✅ | The closed-loop criteria were written into [reflex#20](https://github.com/branes-ai/reflex/issues/20) before the tests ran, and are checked as stated |
+| L1–L4 | ❌ | No flight data |
+| BB-I1–I6 | ◐ | Seven closed-loop criteria on the model, with the true state and no sensor models; no `sim/` harness, no faults (gusts, rotor loss, sensor dropout) |
+| R1 | ✅ | release-please semver |
+| R4 | ◐ | The committed traces pin five scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
+| R2, R3 | ❌ | — |
+
+**Grade today: C.** S1, S3, T1, and T2 are met, with `bench/cascade_bench`
+as the benchmark. S5's structural part is met, as for the
+[mixer](/control/mixer-vv/): the operation count is tested and the header
+states that the cascade does not allocate or throw. B needs S2, S4, T3,
+T4, V4, and R4 besides; V1, V3, and V7 are met already.
+
+### The closed-loop criteria
+
+| Criterion (nominal plant) | Pass if |
+|---|---|
+| Hover hold, 10 s, from a disturbed start | Error < 1 cm after 2 s |
+| 30° roll step | 90 % in ≤ 0.25 s, overshoot ≤ 10 %, within 2° by 0.6 s |
+| 180° roll step | Within 2° by 1.5 s; −q flies identically |
+| Tilt and yaw step | The tilt converges as fast as with no yaw step |
+| 1 m step in x and in z | Overshoot ≤ 10 %, within 2 % by 3 s |
+| Waypoint square, 10 m sides, commanded peak 5 m/s | Cross-track RMS ≤ 0.3 m, max ≤ 0.6 m; the flown top speed within 10 % of the commanded peak |
+| 2 s of thrust saturation | Overshoot within 5 points of an unsaturated step |
+
+## Animations
+
+These animations illustrate three of the requirements above. Each plays a
+trace from a scenario in `tools/trace/scenarios/cascade/`, and each
+scenario computes the check shown under its player. They are not the
+evidence for the requirement (ANI-4): the tests are, and the status table
+follows them. The [explainer](/control/cascade-explainer/) has two more,
+the roll step and the waypoint square, both with sliders.
+
+### The schedule (BB-T1)
+
+`update()` promises that the attitude loop runs on every 4th tick and the
+position loop on every 20th, each holding its output in between. The unit
+test `cascade: outer loops run on their dividers and hold in between`
+checks it on a fixed state. The scenario checks it in closed loop, at every
+tick.
+
+<TracePlayer
+  trace={schedule}
+  title="Does each loop update only on its own ticks?"
+  description="RP-1 in position mode, behind a setpoint that sets off at 5 m/s with no feed-forward, sampled at every 1 ms tick for 100 ms. The position loop's velocity setpoint and tilt target change only at 20, 40, 60, 80, and 100 ms. The pitch-rate setpoint changes only every 4 ms. The torque changes on every tick. Pass criterion: no change off the schedule, counted over every tick. There are none."
+  plots={[
+    { channel: 'target_tilt', title: 'Position loop: tilt target', labels: ['tilt'], colors: [1] },
+    { channel: 'pitch_rate_setpoint', title: 'Attitude loop: pitch-rate setpoint', labels: ['q_sp'], colors: [2] },
+    { channel: 'pitch_torque', title: 'Rate loop: pitch torque', labels: ['τ_y'], colors: [3] },
+  ]}
+/>
+
+### Tilt priority in closed loop (BB-I2)
+
+The attitude law promises that the tilt error does not depend on the yaw
+error. The unit test checks the law on its own; the closed-loop criterion
+checks that a vehicle flies it.
+
+<TracePlayer
+  trace={tiltYaw}
+  title="Does a 90° turn slow the tilt down?"
+  description="Two RP-1 vehicles in attitude mode are given the same 30° roll at 0.1 s; the solid one is also turned 90° about its thrust axis. Both targets point the thrust the same way. The tilt errors fall together, and the vehicles stay within 0.1 m of each other while the turn follows on its own. Pass criterion: the turning vehicle's tilt is within 2° of its target no later than the other's, to one attitude-loop period (4 ms). It is 2 ms later."
+  ghost={{ position: 'tilt_position', attitude: 'tilt_attitude', thrusts: 'tilt_rotor_thrusts', label: 'the vehicle that only tilts' }}
+  plots={[
+    { channel: 'tilt_error', title: 'Tilt error', labels: ['tilt and turn', 'tilt only'], colors: [1, 2] },
+    { channel: 'separation', title: 'Distance between the vehicles', labels: ['separation'], colors: [3] },
+  ]}
+/>
+
+### Anti-windup in closed loop (BB-I2)
+
+Each velocity PID freezes its integral while the position loop cut its axis
+on the last tick. The criterion: a climb that holds the thrust limit for
+more than 2 s overshoots no more than an unsaturated step.
+
+<TracePlayer
+  trace={climb}
+  title="After 2 s against the thrust limit, does the climb overshoot?"
+  description="RP-1 in position mode with the collective capped at 1.25 times its weight, given a 10 m climb. The velocity loop asks for 19.6 N against the 12.3 N cap, and the force is cut for 2.2 s. The vertical integral stays at 0 through the cut. The climb reaches 15 m without overshoot and settles from below. An uncapped 1 m step, scaled to the same height, overshoots by 3.7 %. Pass criterion: the capped climb's overshoot at most 5 points above the uncapped step's. It is 3.7 points below."
+  plots={[
+    { channel: 'collective', title: 'Collective thrust', labels: ['velocity loop asks', 'commanded', 'cap'], colors: [4, 1, 2] },
+    { channel: 'vertical_integral', title: 'Vertical velocity integral', labels: ['integral'], colors: [3] },
+    { channel: 'step_fraction', title: 'Height as a fraction of the step', labels: ['10 m, capped', '1 m, uncapped'], colors: [1, 2] },
+  ]}
+/>
+
+## Evidence ledger
+
+| Claim | Evidence | Harness | Gate |
+|---|---|---|---|
+| Each loop computes its law | The torque law; the tilt/yaw split; level hover thrust at the setpoint | `tests/sdk/cascade` | PR |
+| The limits hold for any input | Tilt, thrust, and velocity limits over generated demands; rate limits with feed-forward | `tests/sdk/cascade` | PR |
+| Cuts are reported in the demand's direction | One case per axis and direction, for the position loop and the mixer | `tests/sdk/cascade` | PR |
+| The schedule holds | The dividers on a fixed state; every tick in closed loop | `tests/sdk/cascade`, `cascade/schedule` | PR |
+| The model's responses match hand-derived plants | Small rate and vertical steps, to 1 % of the step | `tests/sdk/cascade_closed_loop` | PR |
+| The closed-loop criteria hold on the nominal plant | Seven criteria of reflex#20 | `tests/sdk/cascade_closed_loop` | PR |
+| Stable over the model's uncertainty | 32 plant corners, two steps each; analytic phase margin | `tests/sdk/cascade_closed_loop` | PR |
+| A bounded operation count per tick | Counted-type test over generated states and setpoints | `tests/sdk/cascade_resource` | PR |
+| The cost per tick | Benchmark | `bench/cascade_bench` | — |
+| The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
+| The live widgets run the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
+| Planned (M2): mirror and rotation relations hold | Metamorphic tests | Planned: `tests/verification/cascade_metamorphic` | Planned: PR |
+
+The last row is planned.
+
+## Milestones
+
+| # | PR scope | Requirements | Grade after |
+|---|---|---|---|
+| M1 | The envelope in `cascade.hpp`: thrust-to-weight, the delay budget, the state it assumes, the loop rates; `noexcept` on `update()`; every closed-loop test in float; posit and cfloat runs and the minimum precision; sanitizer preset | S2, S4, S5, T3 | — |
+| M2 | Metamorphic tests: a mirror in y swaps the roll and yaw signs, a rotation of the world about z rotates the flight; property tests: generated vehicles inside the envelope, flown with their derived configs, meet a stability and overshoot bound; golden traces in `tests/` | V4, T4, R4 | **B** |
+| M3 | Fuzz target for `update()` (any finite input keeps the invariants and a finite wrench); coverage report; comparison with PX4's multicopter rate, attitude, and position controllers on shared setpoints | T5, T6, V6 | B |
+| M4 | Datasheet: each loop's step and frequency response, margins against τ, J, and delay, and the cost per type and compiler; scenario runner and monitor | C1–C4, D1–D3 | B |
+| M5 | The cascade in the `sim/` scenario suite: sensor noise and delay from an estimator, actuator quantization, gusts, rotor loss, sensor dropout; lockstep and real-time timing | BB-I1, BB-I2, BB-I4 | **A** |
+| M6 | RP-1 flight data: the roll step and the waypoint square flown and simulated with the same gains; processor in the loop on the flight MCU; racing-drone contract tests | L1–L4, BB-I3, BB-I5, R3 | A+ |
+
+M2 is the step that matters most: the metamorphic and property tests check
+the cascade against relations it must satisfy for any vehicle, not only
+against RP-1's numbers. M5 shares the `sim/` harness with the
+[PID's M6](/control/pid-vv/#milestones), the
+[mixer's M6](/control/mixer-vv/#milestones), and the
+[quadrotor model's M9](/model/quadrotor-vv/#milestones).

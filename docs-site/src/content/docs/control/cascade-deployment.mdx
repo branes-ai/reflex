@@ -107,7 +107,7 @@ up while the mixer cuts, and the vehicle overshoots once the cut ends.
 <TracePlayer
   trace={waypoint}
   title="What does the cascade fly from a setpoint with feed-forward?"
-  description="The waypoint square of the explainer: a 10 m square at 5 m height, each leg from rest to 5 m/s and back in 4 s, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, at the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and 0.07 m of the square. Pass criterion: the RMS distance from the square at most 0.3 m, the criterion of reflex#20. It is 0.02 m."
+  description="The waypoint square of the explainer: a 10 m square at 5 m height, each leg from rest to 5 m/s and back in 4 s, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, at the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and 0.07 m of the square. Pass criterion, from reflex#20: the RMS distance from the square at most 0.3 m, its maximum at most 0.6 m, and the top speed within 10 % of the 5 m/s peak, each taken as a fraction of its limit, the worst at most 1. It is 0.2, from the top speed; the RMS distance is 0.02 m."
   ghost={{ position: 'setpoint_position', attitude: 'target_attitude', label: 'the setpoint, at the attitude target' }}
   plots={[
     { channel: 'along_track_lag', title: 'Distance behind the setpoint', labels: ['vehicle to setpoint'], colors: [1] },

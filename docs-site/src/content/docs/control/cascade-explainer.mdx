@@ -170,7 +170,7 @@ attitude it asks for. How far behind it does the vehicle fall?
   live="cascade_waypoint"
   prompt="set the feed-forward to 0 %. Does the vehicle still follow the square, and how far behind the setpoint does it run? Then restore it and raise the peak speed to 8 m/s."
   title="How closely does the cascade follow a moving setpoint?"
-  description="RP-1 hovers at 5 m at a corner of a 10 m square, in position mode. The setpoint runs around the square, each leg from rest at a corner to 5 m/s at mid-leg and back to rest at the next corner, 4 s per leg, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, drawn with the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and within 0.07 m of the square, and its top speed is 5.1 m/s. To accelerate at 2.5 m/s² it tilts up to 20° into each leg, and the same the other way to stop. Pass criterion: the RMS distance from the square at most 0.3 m, the criterion of reflex#20. It is 0.02 m."
+  description="RP-1 hovers at 5 m at a corner of a 10 m square, in position mode. The setpoint runs around the square, each leg from rest at a corner to 5 m/s at mid-leg and back to rest at the next corner, 4 s per leg, with the profile's velocity and acceleration as feed-forward. The translucent vehicle is the setpoint, drawn with the attitude target the velocity loop sends. The vehicle stays within 0.11 m of the setpoint and within 0.07 m of the square, and its top speed is 5.1 m/s. To accelerate at 2.5 m/s² it tilts up to 20° into each leg, and the same the other way to stop. Pass criterion, from reflex#20: the RMS distance from the square at most 0.3 m, its maximum at most 0.6 m, and the top speed within 10 % of the 5 m/s peak, each taken as a fraction of its limit, the worst at most 1. It is 0.2, from the top speed; the RMS distance is 0.02 m."
   ghost={{ position: 'setpoint_position', attitude: 'target_attitude', label: 'the setpoint, at the attitude target' }}
   plots={[
     { channel: 'along_track_lag', title: 'Distance behind the setpoint', labels: ['vehicle to setpoint'], colors: [1] },
@@ -182,14 +182,16 @@ attitude it asks for. How far behind it does the vehicle fall?
 
 Without feed-forward the position loop is the only thing that moves the
 vehicle, and it moves it only once it has fallen behind. At 5 m/s the
-vehicle trails the setpoint by up to 2.7 m and reaches only 4.5 m/s. It
-still stays on the square, within 0.09 m, because each leg is straight and
-ends at rest. Feed-forward fixes the timing, not the path.
+vehicle trails the setpoint by up to 2.7 m and reaches only 4.5 m/s, just
+inside the criterion's 10 %. It still stays on the square, within 0.09 m,
+because each leg is straight and ends at rest. Feed-forward fixes the
+timing, not the path.
 
 At 8 m/s with full feed-forward the profile itself asks for 6.4 m/s², a 33°
 tilt, and the corrections on top reach the 40° tilt limit. The vehicle then
-cannot accelerate as asked. It runs 0.6 m wide of the corners, and the RMS
-error rises to 0.22 m.
+cannot accelerate as asked. It runs 0.61 m wide of the corners, past the
+criterion's 0.6 m, and the check fails, though the RMS error is still
+0.22 m.
 
 ## 5. Running out of thrust: a capped climb
 

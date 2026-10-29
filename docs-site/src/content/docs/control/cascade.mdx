@@ -43,7 +43,9 @@ using namespace branes::reflex;
 const model::QuadrotorParams<double> vehicle{};             // RP-1
 const control::Mixer<double> mixer(control::mixer_params_from(vehicle));
 const control::CascadeConfig<double> cfg = control::cascade_config_from(vehicle);
-if (!control::cascade_config_valid(cfg)) { /* the vehicle cannot hover inside the limits */ }
+if (!control::cascade_config_valid(cfg)) {
+    return;  // the vehicle cannot hover inside the derived limits: do not build a Cascade
+}
 control::Cascade<double> cascade(cfg);
 
 control::PositionSetpoint<double> sp;

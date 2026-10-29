@@ -1,7 +1,7 @@
 {
   "schema": "reflex-trace/1",
   "provenance": {
-    "commit": "9d27ccc", "block": "control/cascade",
+    "commit": "cf944fb", "block": "control/cascade",
     "scenario": "tools/trace/scenarios/cascade/waypoint.hpp", "seed": 0,
     "compiler": "gcc 15.2 optimized", "dt_sim": 0.001, "dt_trace": 0.04
   },
@@ -6361,6 +6361,6 @@
     { "t": 16, "label": "back at the start: hover" }
   ],
   "checks": [
-    { "id": "BB-I2", "metric": "cross_track_rms", "unit": "m", "value": 0.019450566000658535, "limit": 0.3, "comparison": "<=", "pass": true }
+    { "id": "BB-I2", "metric": "worst_criterion_fraction", "unit": "1", "value": 0.19806622468076895, "limit": 1, "comparison": "<=", "pass": true }
   ]
 }

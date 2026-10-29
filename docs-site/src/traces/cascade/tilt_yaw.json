@@ -1,7 +1,7 @@
 {
   "schema": "reflex-trace/1",
   "provenance": {
-    "commit": "9d27ccc", "block": "control/cascade",
+    "commit": "cf944fb", "block": "control/cascade",
     "scenario": "tools/trace/scenarios/cascade/tilt_yaw.cpp", "seed": 0,
     "compiler": "gcc 15.2 optimized", "dt_sim": 0.001, "dt_trace": 0.005
   },

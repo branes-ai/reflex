@@ -51,6 +51,19 @@ export const LIVE = {
       { name: 'hold', label: 'Time at the unreachable setpoint', unit: 's', scale: 1, min: 0.5, max: 3, step: 0.1, default: 2 },
     ],
   },
+  mixer_priority: {
+    trace: 'mixer/priority.json',
+    params: [
+      { name: 'throttle', label: 'Throttle, F / 4·T_max', unit: '%', scale: 0.01, min: 5, max: 100, step: 5, default: 0.75 },
+      { name: 'yaw', label: 'Yaw torque τz', unit: 'N·m', scale: 1, min: 0, max: 0.3, step: 0.01, default: 0.1 },
+    ],
+  },
+  mixer_clip_vs_priority: {
+    trace: 'mixer/clip_vs_priority.json',
+    params: [
+      { name: 'throttle', label: 'Throttle, F / 4·T_max', unit: '%', scale: 0.01, min: 0, max: 100, step: 5, default: 1 },
+    ],
+  },
 };
 
 /** Runs `scenario` in a loaded module with SI parameter values; returns the parsed trace. */

@@ -334,8 +334,14 @@ The PID controller has its four pages: the
 the derivative filter, and windup), the [developer guide](/control/pid/),
 the [V&V plan](/control/pid-vv/), and the
 [deployment guide](/control/pid-deployment/), from six scenarios in
-`tools/trace/scenarios/pid/`. The mixer, the cascade, and the filters
-follow.
+`tools/trace/scenarios/pid/`. The mixer has its four too: the
+[explainer](/control/mixer-explainer/) with two live widgets (the
+saturation priority, and a closed-loop comparison with per-rotor clipping),
+the [developer guide](/control/mixer/), the [V&V plan](/control/mixer-vv/),
+and the [deployment guide](/control/mixer-deployment/), from three
+scenarios in `tools/trace/scenarios/mixer/`. Its rotor thrusts are drawn as
+bars at the cursor, a panel the player gained for it. The cascade and the
+filters follow.
 
 P0 and P1 come first: the quadrotor model has the richest dynamics and the
 most V&V content to illustrate. P1 is also the test of whether the method

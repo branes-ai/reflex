@@ -1,0 +1,193 @@
+---
+title: How the Mixer Works
+description: An explainer for Mixer, from the four rotor thrusts that make a wrench, through what the mixer gives up when the rotors run out and why in that order, to airmode at low throttle and a closed-loop comparison with plain per-rotor clipping, with live widgets that run the mixer's own code.
+---
+
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import priority from '../../../traces/mixer/priority.json';
+import throttleSweep from '../../../traces/mixer/throttle_sweep.json';
+import clipVsPriority from '../../../traces/mixer/clip_vs_priority.json';
+
+The control loops ask for a wrench: a collective thrust and a torque about
+each axis. A quadrotor has only four rotors, and each one can push between
+zero and its maximum thrust. This page explains how
+[`Mixer`](/control/mixer/) turns the wrench into four thrusts, and what it
+gives up when the rotors cannot deliver all of it.
+
+Every animation plays a trace recorded from the mixer's own C++, and the
+scenario is linked under each player. The two widgets with sliders rerun
+that C++, compiled to WebAssembly, in your browser. The vehicle is RP-1,
+the [quadrotor model](/model/quadrotor/)'s default: 1 kg, rotors 0.11 m
+from the centre, and at most 12 N per rotor. The controls and keys are
+described on the [Trace Player](/standards/trace-player/#player-behaviour)
+page.
+
+## Four rotors, four demands
+
+The rotors sit on the diagonals of a square, in PX4's Quad X order: 0 front
+right, 1 rear left, 2 front left, 3 rear right. Rotors 0 and 1 spin
+counter-clockwise seen from above, 2 and 3 clockwise. Each rotor's thrust
+$T_i$ adds to the wrench in four ways:
+
+| Wrench | T₀ front right | T₁ rear left | T₂ front left | T₃ rear right |
+|---|---|---|---|---|
+| Collective F | + | + | + | + |
+| Roll τx (left side up) | − | + | + | − |
+| Pitch τy (nose down) | − | + | − | + |
+| Yaw τz (counter-clockwise) | − | − | + | + |
+
+Roll and pitch come from the thrust difference across the arms, with a
+moment arm $a = L/\sqrt 2 = 0.078$ m. Yaw comes from the rotors' drag
+torque, $k_m T$ with $k_m = 0.016$ m, which spins the frame the opposite
+way to the rotor. The four rows are independent, so for any wrench there is
+exactly one set of thrusts:
+
+$$
+T_i = \frac{F}{4} \pm \frac{\tau_x}{4a} \pm \frac{\tau_y}{4a} \pm \frac{\tau_z}{4k_m}
+$$
+
+For RP-1, 1 N·m of roll moves each rotor by 3.2 N, and 1 N·m of yaw by
+15.6 N. Yaw is expensive: the drag arm is five times shorter than the
+moment arm.
+
+That formula is `allocate()`. It ignores the limits, so its thrusts can be
+negative, or more than 12 N. `mix()` starts from it and keeps every rotor
+in range.
+
+## 1. When the rotors run out: what gives way first
+
+When some rotor would need more than 12 N, or less than 0, something in the
+demand has to give. `mix()` gives it up in a fixed order:
+
+1. **yaw**, which turns the heading but does not move the vehicle;
+2. then **collective thrust**, which changes the climb for a moment;
+3. and **roll and pitch** last, scaled together so the tilt keeps its
+   direction. The tilt is the direction of the thrust, so it decides where
+   the vehicle goes.
+
+*Before you play:* the vehicle is at 75 % throttle, 9 N per rotor, with a
+little yaw, and the roll demand grows. Rotor 2 (front left) carries both
+the roll and the yaw. When it reaches 12 N, what does the mixer cut first?
+
+<TracePlayer
+  trace={priority}
+  live="mixer_priority"
+  prompt="lower the throttle to 25 %. Which limit does the mixer meet first now, and what does it do to the collective? Then set the yaw torque to 0.3 N·m at 75 % and see how early yaw gives way."
+  title="As the roll demand grows past what the rotors can give, what goes first?"
+  description="The mixer is asked for F = 36 N (9 N per rotor) and τz = 0.1 N·m, while the roll demand ramps from 0 to 2.5 N·m over 5 s. Roll raises rotors 1 and 2 and lowers 0 and 3; yaw raises 2 and 3. Rotor 2 reaches 12 N first. From 0.9 s (τx = 0.45 N·m) yaw shrinks, and by 1.88 s (τx = 0.94 N·m) it is gone. Then the collective falls, from 36 N to 24 N by 4 s, and the roll is delivered whole. From 3.74 s (τx = 1.87 N·m) rotors 1 and 2 are at 12 N and rotors 0 and 3 at 0 N: no collective has room for more roll, so σ scales it down, to 0.75 at 5 s. The dashed outlines are allocate()'s thrusts for the same demand with no limits. By 5 s rotor 2 would need 18.6 N, and rotor 0 −0.6 N. Pass criterion: at every sample, the achieved torque is the demand scaled by (σ, σ, s), to within 1e-12 N·m."
+  plots={[
+    { kind: 'bars', channel: 'thrusts', title: 'Rotor thrust at the cursor', labels: ['0 FR', '1 RL', '2 FL', '3 RR'],
+      label: 'mix()', marker: { channel: 'allocation', label: 'allocate(), no limits' },
+      limits: { channel: 'thrust_limits', label: 'T_min, T_max' } },
+    { channel: 'roll_torque', title: 'Roll and yaw torque', components: [1], labels: ['roll achieved'], colors: [1],
+      series: [{ channel: 'roll_torque', component: 0, label: 'roll demanded', color: 1, dashed: true },
+               { channel: 'yaw_torque', component: 1, label: 'yaw achieved', color: 2 },
+               { channel: 'yaw_torque', component: 0, label: 'yaw demanded', color: 2, dashed: true }] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['demanded', 'achieved'], colors: [4, 3] },
+    { channel: 'scales', title: 'What is left of each demand', labels: ['σ, roll and pitch', 's, yaw'], colors: [1, 2] },
+  ]}
+/>
+
+In the torque plot the achieved roll follows its demand (dashed) until
+3.74 s, where they part. Yaw parts from its demand first, at 0.9 s.
+
+Why this order? Yaw is the cheapest to lose: a heading that lags for a
+moment does not change the path. It is also the most expensive to keep,
+because each N·m of yaw takes five times more thrust difference than roll or
+pitch. A lost moment of collective changes the climb, which the loops can
+make up. Losing roll and pitch means the thrust points somewhere other than
+where the loops sent it. Scaling roll and pitch by one factor keeps the
+direction of the tilt. The vehicle then still turns the right way, only more
+slowly.
+
+The torque one axis can get is set by the thrust range, not by the
+collective: rotors 1 and 2 at 12 N against rotors 0 and 3 at 0 N gives
+τx = 4a·6 N = 1.87 N·m. To get it, the collective has to sit in the
+middle, at 24 N, which is where the mixer took it.
+
+## 2. At the bottom of the throttle: airmode
+
+The same thing happens at the other end. With the throttle near zero, the
+rotors that should slow down cannot go below 0 N, so the mixer raises the
+collective instead. It raises it only as far as roll and pitch need. The
+collective ranks above yaw, so yaw gives way before the mixer lifts the
+collective any further.
+
+This is airmode: the vehicle keeps its attitude authority with the throttle
+closed, in a dive or a flip. It also means the mixer spins the rotors up
+whenever torque is asked for, even at zero throttle. A vehicle on the
+ground, disarmed, or at motor idle must not reach the mixer: arming and idle
+belong to the state machine around it.
+
+*Before you play:* the collective demand sweeps from 0 to past full
+throttle, with a fixed roll, pitch, and yaw. Where does the mixer pass the
+demand through unchanged?
+
+<TracePlayer
+  trace={throttleSweep}
+  title="Across the whole throttle range, when does the mixer change the demand?"
+  description="The torque demand is held at τ = (0.5, 0.2, 0.1) N·m while the collective demand F sweeps from 0 to 52 N, past the 48 N four rotors can make, over 6.5 s. At F = 0 rotor 0 would need −3.8 N. The mixer lifts the collective to 9 N, just enough for roll and pitch, and gives up all the yaw. Up to F = 9 N (1.1 s) the collective stays at 9 N. From there it follows the demand. Yaw comes back as the collective rises, and is whole from F = 15.4 N (1.9 s). From 15.4 N to 38 N every rotor fits, and the bars match their outlines. At F = 38 N (4.75 s) rotor 2 reaches 12 N and yaw gives way. From F = 41.6 N (5.2 s) the collective is held at 41.6 N. That is more than with no yaw at all. Rotors 0 and 1 carry a wider roll-and-pitch spread than 2 and 3, so their pair reaches the limit at a lower mean. The 41 % of yaw that remains moves thrust onto rotors 2 and 3, whose mean can sit higher. Roll and pitch are delivered whole across the sweep. Pass criterion: between samples no rotor's thrust steps by more than the collective demand's step, the bound of the unit test for continuity."
+  plots={[
+    { kind: 'bars', channel: 'thrusts', title: 'Rotor thrust at the cursor', labels: ['0 FR', '1 RL', '2 FL', '3 RR'],
+      label: 'mix()', marker: { channel: 'allocation', label: 'allocate(), no limits' },
+      limits: { channel: 'thrust_limits', label: 'T_min, T_max' } },
+    { channel: 'collective', title: 'Collective thrust', labels: ['demanded', 'achieved'], colors: [4, 3] },
+    { channel: 'scales', title: 'What is left of each demand', labels: ['σ, roll and pitch', 's, yaw'], colors: [1, 2] },
+  ]}
+/>
+
+Between the two ends the mixer does nothing at all: a demand that fits
+comes back unchanged. Across each boundary its output changes smoothly,
+because each step of the priority is a clamp of a bound that moves
+smoothly with the demand. No rotor jumps when the mixer starts or stops
+cutting.
+
+## 3. Why not just clip each rotor?
+
+The simplest mixer computes `allocate()` and clamps each rotor to its
+range. That keeps every rotor in range, but the clamp removes thrust from
+whichever rotors hit a limit, so the torque the four rotors make no longer
+points the way the demand did. Some of the yaw comes out of the tilt, and
+the collective drops by whatever was cut.
+
+*Before you play:* two vehicles fly the same manoeuvre at full throttle: yaw
+60° and roll 30° at once, with every rotor already asked for 12 N. One uses
+`mix()`; the other (translucent) clips each rotor. Which one gets its tilt
+right first, and what does each give up?
+
+<TracePlayer
+  trace={clipVsPriority}
+  live="mixer_clip_vs_priority"
+  prompt="lower the throttle to 50 %. Does clipping still matter? Then try 0 %, a closed throttle."
+  title="At full throttle, what does plain per-rotor clipping cost?"
+  description="Two RP-1 vehicles hover at 50 m, each with its own cascade in attitude mode. At 0.1 s both are given the same target: yaw 60° and roll 30°, at a collective of 48 N, all four rotors at 12 N. The solid vehicle's mixer is mix(), and the cascade's integrators get its saturation report. The translucent vehicle clips each rotor of allocate() on its own. The mix() run gets its tilt within 3° of the target 0.15 s after the step and stays there, with its collective near 48 N (47.5 N on average). It gives up yaw, so its heading lags: 39° of 60° at 1 s. The clipped run turns its heading to 59°, but its tilt wobbles up to 5° off the target until 0.77 s after the step, and its collective dips to 36 N at first and averages 45 N. Pass criterion: from 0.2 s after the step on, the mix() run's tilt error stays within 3°, 10 % of the 30° step."
+  ghost={{ position: 'clip_position', attitude: 'clip_attitude', thrusts: 'clip_rotor_thrusts', label: 'the clipped run' }}
+  thrustScale={0.02}
+  plots={[
+    { channel: 'tilt_error', title: 'Tilt error', labels: ['mix()', 'clipped'], colors: [1, 2] },
+    { channel: 'yaw', title: 'Heading', labels: ['mix()', 'clipped'], colors: [1, 2],
+      series: [{ channel: 'yaw_setpoint', label: 'target', color: 4, dashed: true }] },
+    { channel: 'collective', title: 'Collective thrust', labels: ['mix()', 'clipped'], colors: [1, 2],
+      series: [{ channel: 'collective_demand', label: 'demanded', color: 4, dashed: true }] },
+  ]}
+/>
+
+At mid throttle nothing saturates, and the two vehicles fly alike. The
+mixer's order matters only at the edges, and that is where a racing drone
+spends its hardest moments: punching out of a turn, or flipping with the
+throttle closed. At 0 % throttle the clipped run's tilt is off by up to 12°
+after the step, against 1° for `mix()`.
+
+The difference is not that `mix()` delivers more. It is that what it gives
+up is chosen, always in the same order, and reported. The cascade's
+integrators read the report and stop integrating on the axes the mixer cut
+(see the [cascade](/control/cascade/)), so they do not wind up behind it.
+
+## Where to go next
+
+- The [developer guide](/control/mixer/) has the allocation, the priority
+  as `mix()` computes it, the saturation report, and the API.
+- The [V&V plan](/control/mixer-vv/) lists what is verified, and how.
+- The [deployment guide](/control/mixer-deployment/) covers the
+  parameters, the vehicle's torque envelope, arming and idle, and wiring the
+  report to the loops.

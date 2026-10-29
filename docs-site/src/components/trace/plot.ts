@@ -23,6 +23,31 @@ export interface PlotSpec {
   series?: SeriesSpec[];
 }
 
+/**
+ * A bar panel: one bar per component of a vector channel at the cursor's
+ * sample, for quantities read side by side rather than over time (the four
+ * rotor thrusts). It has no time axis; the cursor moves the bars.
+ */
+export interface BarsSpec {
+  kind: 'bars';
+  /** Vector channel: one bar per component. */
+  channel: string;
+  /** Panel title; the unit is appended. */
+  title: string;
+  /** Label under each bar. */
+  labels: string[];
+  /** Legend label for the bars. */
+  label: string;
+  /** A second run's channel, same width: its bars stand beside the first's. */
+  compare?: { channel: string; label: string };
+  /** A channel of the same width drawn as a dashed outline behind each bar (for example the demand before limits). */
+  marker?: { channel: string; label: string };
+  /** A two-component channel [lo, hi] drawn as dashed lines across the panel. */
+  limits?: { channel: string; label: string };
+}
+
+export type PanelSpec = PlotSpec | BarsSpec;
+
 export interface SeriesSpec {
   channel: string;
   /** Component of a vector channel (default 0). */
@@ -182,4 +207,131 @@ export function renderPlot(trace: Trace, spec: PlotSpec, key = '') {
       decimals: readoutDecimals(yt.step),
     },
   };
+}
+
+const BAR_H = 168;
+const BAR_TOP = 12;
+const BAR_BOTTOM = BAR_H - 40;
+
+/** What the client needs to move a bar panel's marks to sample k. */
+export interface BarsReadout {
+  channel: string;
+  compare?: string;
+  marker?: string;
+  limits?: string;
+  lo: number;
+  hi: number;
+  decimals: number;
+  unit: string;
+  /** Text for the accessible readout: the panel title, each bar's label, and each series' legend label. */
+  title: string;
+  labels: string[];
+  names: { main: string; compare?: string; marker?: string; limits?: string };
+}
+
+/** Bar y and height, from the baseline (0, or the bottom of the range) to v. */
+export function barGeometry(v: number, lo: number, hi: number) {
+  const y = (u: number) => BAR_BOTTOM - ((u - lo) / (hi - lo)) * (BAR_BOTTOM - BAR_TOP);
+  const base = y(Math.min(Math.max(0, lo), hi));
+  const top = y(Math.min(Math.max(v, lo), hi));
+  return { y: Math.min(base, top), height: Math.abs(base - top), line: y(v) };
+}
+
+function renderBars(trace: Trace, spec: BarsSpec) {
+  const data = trace.channels[spec.channel];
+  if (!data) throw new Error(`TracePlayer: no channel "${spec.channel}" in the trace`);
+  if (!Array.isArray(data[0])) throw new Error(`TracePlayer: bar channel "${spec.channel}" must be a vector`);
+  const width = (data[0] as number[]).length;
+  if (spec.labels.length !== width) throw new Error(`TracePlayer: bar panel "${spec.title}" needs ${width} labels`);
+  const unit = channelUnit(trace, spec.channel) ?? '';
+  const need = (name: string, w: number) => {
+    const ch = trace.channels[name];
+    if (!ch) throw new Error(`TracePlayer: no channel "${name}" in the trace`);
+    if (!Array.isArray(ch[0]) || (ch[0] as number[]).length !== w) {
+      throw new Error(`TracePlayer: channel "${name}" must have ${w} components for bar panel "${spec.title}"`);
+    }
+    if ((channelUnit(trace, name) ?? '') !== unit) throw new Error(`TracePlayer: channel "${name}" is not in ${unit}`);
+    return ch as number[][];
+  };
+  const compare = spec.compare && need(spec.compare.channel, width);
+  const marker = spec.marker && need(spec.marker.channel, width);
+  const limits = spec.limits && need(spec.limits.channel, 2);
+
+  // One range for the whole trace, so the axis holds still while the bars move.
+  let lo = 0;
+  let hi = -Infinity;
+  for (const series of [data as number[][], compare, marker, limits]) {
+    for (const row of series ?? []) for (const v of row) {
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+  }
+  if (!(hi > lo)) hi = lo + 1;
+  const yt = ticks(lo, hi + (hi - lo) * 0.05, 3);
+  lo = Math.min(lo, yt.values[0]);
+  hi = Math.max(hi + (hi - lo) * 0.05, yt.values[yt.values.length - 1]);
+  const y = (v: number) => BAR_BOTTOM - ((v - lo) / (hi - lo)) * (BAR_BOTTOM - BAR_TOP);
+  const yd = decimals(yt.step);
+  const grid = yt.values
+    .map((v) => `<line class="${v === 0 ? 'axis' : 'grid'}" x1="${X0}" x2="${X1}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/>` +
+      `<text class="tick" x="${X0 - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v.toFixed(yd)}</text>`)
+    .join('');
+
+  const slot = (X1 - X0) / width;
+  const runs = compare ? 2 : 1;
+  const bw = Math.min(40, (slot * 0.6) / runs);
+  const gap = 4;
+  const bars: string[] = [];
+  for (let i = 0; i < width; i++) {
+    const cx = X0 + slot * (i + 0.5);
+    const left = cx - (runs * bw + (runs - 1) * gap) / 2;
+    const at = (series: number[][], j: number, cls: string, name: string) => {
+      const g = barGeometry(series[0][i], lo, hi);
+      return `<rect class="${cls}" data-b="${name}-${i}" x="${(left + j * (bw + gap)).toFixed(1)}" width="${bw.toFixed(1)}" ` +
+        `y="${g.y.toFixed(1)}" height="${g.height.toFixed(1)}" rx="2"/>`;
+    };
+    bars.push(at(data as number[][], 0, 'bar f-1', 'main'));
+    if (compare) bars.push(at(compare, 1, 'bar f-3', 'cmp'));
+    if (marker) bars.push(at(marker, 0, 'bar-marker s-2', 'mk'));  // on top: an outline, so the bar shows through
+    bars.push(`<text class="tick bar-label" x="${cx.toFixed(1)}" y="${BAR_BOTTOM + 15}" text-anchor="middle">${spec.labels[i]}</text>`);
+    bars.push(`<text class="tick bar-value" data-b="val-${i}" x="${cx.toFixed(1)}" y="${BAR_BOTTOM + 30}" text-anchor="middle"></text>`);
+  }
+  const lines = limits
+    ? [0, 1].map((j) => `<line class="line thin dashed s-4" data-b="lim-${j}" x1="${X0}" x2="${X1}" ` +
+        `y1="${y(limits[0][j]).toFixed(1)}" y2="${y(limits[0][j]).toFixed(1)}"/>`).join('')
+    : '';
+  const title = `${spec.title}${unit && unit !== '1' ? ` [${unit}]` : ''}`;
+  const svg = `<svg class="tp-plot tp-bars" viewBox="0 0 ${W} ${BAR_H}" aria-hidden="true">` +
+    `<rect class="surface" x="0.5" y="0.5" width="${W - 1}" height="${BAR_H - 1}" rx="6"/>` +
+    grid + bars.join('') + lines + `</svg>`;
+  const readout: BarsReadout = {
+    channel: spec.channel,
+    compare: spec.compare?.channel,
+    marker: spec.marker?.channel,
+    limits: spec.limits?.channel,
+    lo,
+    hi,
+    decimals: readoutDecimals(yt.step),
+    unit: unit === '1' ? '' : unit,
+    title: spec.title,
+    labels: spec.labels,
+    names: { main: spec.label, compare: spec.compare?.label, marker: spec.marker?.label, limits: spec.limits?.label },
+  };
+  return {
+    title,
+    svg,
+    dashed: false,
+    legend: [
+      { label: spec.label, color: 1, dashed: false },
+      ...(spec.compare ? [{ label: spec.compare.label, color: 3, dashed: false }] : []),
+      ...(spec.marker ? [{ label: spec.marker.label, color: 2, dashed: true }] : []),
+      ...(spec.limits ? [{ label: spec.limits.label, color: 4, dashed: true }] : []),
+    ],
+    readout: { items: [] as { channel: string; component: number }[], decimals: readout.decimals, bars: readout },
+  };
+}
+
+/** Renders a panel of either kind: a time plot, or bars at the cursor. */
+export function renderPanel(trace: Trace, spec: PanelSpec, key = '') {
+  return 'kind' in spec && spec.kind === 'bars' ? renderBars(trace, spec) : renderPlot(trace, spec as PlotSpec, key);
 }

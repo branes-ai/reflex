@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0](https://github.com/branes-ai/reflex/compare/v0.6.3...v0.7.0) (2026-10-30)
+
+
+### Features
+
+* **docs-site:** generate the site from docs/, with docs-kit v0.2.1 ([#51](https://github.com/branes-ai/reflex/issues/51)) ([335d07d](https://github.com/branes-ai/reflex/commit/335d07d9017b0bf972ebb764dc42a6dd829a2237))
+
+
+### Documentation
+
+* mark the docs-site plan complete ([#53](https://github.com/branes-ai/reflex/issues/53)) ([840b837](https://github.com/branes-ai/reflex/commit/840b8375715ad060dbda49c08f3d5afb4e587052))
+
 ## [0.6.3](https://github.com/branes-ai/reflex/compare/v0.6.2...v0.6.3) (2026-10-29)
 
 

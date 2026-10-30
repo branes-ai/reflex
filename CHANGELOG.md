@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.1](https://github.com/branes-ai/reflex/compare/v0.7.0...v0.7.1) (2026-10-30)
+
+
+### Continuous Integration
+
+* skip ci and commitlint on the release pr ([#54](https://github.com/branes-ai/reflex/issues/54)) ([9027e9e](https://github.com/branes-ai/reflex/commit/9027e9ecbafd80113df81d154db0391b11e3bf58))
+
 ## [0.7.0](https://github.com/branes-ai/reflex/compare/v0.6.3...v0.7.0) (2026-10-30)
 
 

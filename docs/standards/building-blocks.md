@@ -35,8 +35,8 @@ first in isolation and then integrated in a closed loop
 | Item | Location |
 |---|---|
 | Header with the spec (BB-S1…S5) | `sdk/include/branes/reflex/<layer>/<block>.hpp` |
-| Usage page with its grade | `docs/<layer>/<block>.md` |
-| V&V plan: requirement status, evidence ledger, milestones | `docs/<layer>/<block>-vv.md` |
+| Usage page with its grade | `docs/<layer>/<block>.mdx` (`.md` if it uses no components) |
+| V&V plan: requirement status, evidence ledger, milestones | `docs/<layer>/<block>-vv.mdx` (`.md` if it uses no components) |
 | Datasheet: generated figures and tables | `docs/<layer>/<block>-datasheet.mdx` |
 | Unit and contract tests | `tests/sdk/` |
 | Verification tests | `tests/verification/` |

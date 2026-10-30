@@ -19,6 +19,7 @@ reflex's site is generated from `docs/`, like anatomy's, racing-drone's and syna
 - **`docs-site/docs-kit.config.mjs`** holds what docs-kit doesn't default: the title and description, the "Signal Processing" label for `dsp/`, the amber accent, `math: true` (KaTeX, as before), `src/styles/custom.css` (now only the rule that scrolls wide display math), and the API reference over `sdk/include` (it replaces the `Doxyfile`). The package pins `github:branes-ai/docs-kit#v0.2.1`; Astro, Starlight and KaTeX come with it.
 - **The deploy keeps its own workflow**, `deploy-docs.yml`, because its build needs Emscripten for the WebAssembly module, and docs-kit's shared deploy can't add a toolchain. It runs the site's `npm run api` and `npm run build`, and now also triggers on `docs/**`.
 - **CI:** the `Docs traces` job already builds the site; it now runs `npm run check` after the build, which checks every link and anchor in it.
+- **`docs/sessions/` is not published** (`unpublished` in the config), as on synapse: session logs are working records, not documentation. Design notes and assessments, in `arch/` and `assessments/`, are published like any folder, with a row in the map.
 - **The records**, `docs/plan/` and `docs/adr/`, are published on the [architecture site](https://branes-ai.github.io/architecture/reflex/), which lists reflex in its `sources.yaml`; this site redirects to them.
 
 ## Acceptance

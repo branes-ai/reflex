@@ -12,4 +12,4 @@ These documents are published at <https://branes-ai.github.io/reflex/>. The site
 | [examples/](examples/gyro-lowpass.mdx) | [Mixed-Precision Gyro Filter](examples/gyro-lowpass.mdx) |
 | [Roadmap](roadmap.md) | From classical PID to fault-tolerant non-linear MPC. |
 
-Engineering notes that are not published yet go in `arch/`, `assessments/` and `sessions/` as they land; the plans and decisions (`plan/`, `adr/`) are published on the [architecture site](https://branes-ai.github.io/architecture/reflex/).
+Design notes and assessments go in `arch/` and `assessments/` as they land, and are published like any folder here: give each a row in this table. The session logs, `sessions/`, are working records and are not published. The plans and decisions (`plan/`, `adr/`) are published on the [architecture site](https://branes-ai.github.io/architecture/reflex/).

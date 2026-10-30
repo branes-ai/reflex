@@ -1,10 +1,10 @@
 ---
-status: in-progress
+status: complete
 issue: branes-ai/reflex#50
 ---
 # Plan: generate the site from docs/, with docs-kit
 
-Issue: [#50](https://github.com/branes-ai/reflex/issues/50), under the epic [architecture#3](https://github.com/branes-ai/architecture/issues/3) (one docs-site workflow for every repo, generated from `docs/`). It builds on [architecture#4](https://github.com/branes-ai/architecture/issues/4) (the shared generator, [docs-kit](https://github.com/branes-ai/docs-kit)) and [architecture#5](https://github.com/branes-ai/architecture/issues/5) (MDX pages in `docs/`, docs-kit `v0.2.0`).
+Issue: [#50](https://github.com/branes-ai/reflex/issues/50), under the epic [architecture#3](https://github.com/branes-ai/architecture/issues/3) (one docs-site workflow for every repo, generated from `docs/`). It builds on [architecture#4](https://github.com/branes-ai/architecture/issues/4) (the shared generator, [docs-kit](https://github.com/branes-ai/docs-kit)) and [architecture#5](https://github.com/branes-ai/architecture/issues/5) (MDX pages in `docs/`, docs-kit `v0.2.0`). Implemented in [#51](https://github.com/branes-ai/reflex/pull/51), on docs-kit `v0.2.1`.
 
 ## Goal
 
@@ -23,6 +23,8 @@ reflex's site is generated from `docs/`, like anatomy's, racing-drone's and syna
 - **The records**, `docs/plan/` and `docs/adr/`, are published on the [architecture site](https://branes-ai.github.io/architecture/reflex/), which lists reflex in its `sources.yaml`; this site redirects to them.
 
 ## Acceptance
+
+All four were met on 2026-10-30. On the deployed site, every live widget tried reran its scenario in WebAssembly, every trace player drew, and no page logged an error.
 
 1. `docs-site/src/content/` has no committed content; every page comes from `docs/`.
 2. Every route on today's site still exists, with the same content and the same sidebar order: a comparison of each page's content in the built `dist/`, the sidebar, and a screenshot.

@@ -1,18 +1,22 @@
 name: Deploy Documentation
 
-# Builds the Starlight docs site, the Doxygen C++ API reference, and the
+# Builds the Starlight docs site (generated from docs/ by docs-kit, at the
+# version docs-site/package.json pins), the Doxygen C++ API reference, and the
 # WebAssembly module of the live widgets, and publishes them to GitHub Pages
-# at https://branes-ai.github.io/reflex/.
+# at https://branes-ai.github.io/reflex/. Unlike the other repos, it doesn't
+# call docs-kit's shared deploy workflow: that workflow's build job can't add
+# the Emscripten toolchain the module needs.
 #
 # One-time setup (repo admin, cannot be automated here): Settings → Pages →
 # Build and deployment → Source = "GitHub Actions". After that, every push
-# to main touching docs-site/, the public headers (API reference), the
+# to main touching docs/, docs-site/, the public headers (API reference), the
 # scenarios and tools behind the widgets, or this workflow redeploys.
 
 on:
   push:
     branches: [main]
     paths:
+      - 'docs/**'
       - 'docs-site/**'
       - 'sdk/include/**'
       - 'tools/**'
@@ -42,7 +46,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: docs-site/package-lock.json
 
@@ -86,7 +90,7 @@ jobs:
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           scripts/build-wasm.sh
 
-      - name: Build site (Astro)
+      - name: Build site (docs-kit)
         working-directory: docs-site
         run: npm run build
         env:

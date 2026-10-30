@@ -1,0 +1,145 @@
+---
+title: PID Controller
+description: Developer guide for branes::reflex::Pid, the discrete PID controller for flight-control inner loops.
+sidebar:
+  label: "Developer Guide"
+  group: "PID Controller"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import timingFault from '@site/traces/pid/timing_fault.json';
+
+`#include <branes/reflex/control/pid.hpp>`
+
+**Grade: C** (specified and unit-tested) under the
+[building block standard](../standards/building-blocks.md). The
+[V&V plan](pid-vv.mdx) has the assessment and the path to A.
+
+This is the developer guide: the control law, contracts, and API. The
+[explainer](pid-explainer.mdx) builds the controller up one term at a
+time, and the [deployment guide](pid-deployment.mdx) covers choosing
+its limits and wiring it into a loop.
+
+`branes::reflex::Pid<Real>` is a discrete-time PID controller with the
+refinements a flight controller needs: derivative on measurement, a derivative
+low-pass filter, integral clamping, conditional-integration anti-windup, and
+output saturation.
+
+## Control law
+
+With setpoint $r$, measurement $y$, error $e = r - y$ and sample period
+$\Delta t$, each update computes
+
+$$
+u_k = \operatorname{sat}_{[u_{\min},\,u_{\max}]}\!\left(K_p e_k + I_k - K_d \dot{y}_k\right)
+$$
+
+**Derivative on measurement.** The D term uses $-\dot{y}$ rather than $\dot{e}$.
+For a constant setpoint they are equal, but a step in $r$ produces no
+derivative kick. The rate is low-pass filtered with time constant $\tau$:
+
+$$
+\dot{y}_k = \frac{\tau\,\dot{y}_{k-1} + \Delta t\,\dfrac{y_k - y_{k-1}}{\Delta t}}{\tau + \Delta t}
+$$
+
+$\tau = 0$ disables the filter. The first update after construction or
+`reset()` has no history, so its rate is zero.
+
+**Integral.** The integral is kept in output units, $I_k = K_i \sum e\,\Delta t$,
+clamped to $[I_{\min}, I_{\max}]$.
+
+**Anti-windup (conditional integration).** If the unsaturated output exceeds a
+limit *and* the error would push it further past that limit, the integral is
+frozen for that step. If the error would pull the output back into range, it
+integrates normally. After a long saturation (for example, a setpoint the
+actuator cannot reach), the loop recovers immediately instead of waiting for a
+wound-up integral to unwind. The closed-loop test
+`anti-windup recovers quickly from an unreachable setpoint` pins this: the loop
+settles in under 0.2 s, versus ~2.4 s for a naive integrator.
+
+**External saturation.** A stage after the controller can cut its command,
+as the [mixer](mixer.mdx) does under saturation. The four-argument
+`update(setpoint, measurement, dt, external_saturation)` takes the direction
+of that cut (+1 delivered less than the output, −1 more, 0 not cut) and
+freezes the integral by the same rule as the controller's own limits. The
+[cascaded controller](cascade.mdx) feeds it the mixer's report.
+
+## Usage
+
+```cpp
+#include <branes/reflex/control/pid.hpp>
+
+using branes::reflex::Pid;
+using branes::reflex::PidConfig;
+
+PidConfig<float> cfg;
+cfg.kp = 0.8f;
+cfg.ki = 2.0f;
+cfg.kd = 0.02f;
+cfg.output_min = -1.0f;      // normalized torque command
+cfg.output_max = 1.0f;
+cfg.integral_min = -0.3f;    // cap the integral's authority
+cfg.integral_max = 0.3f;
+cfg.derivative_tau = 0.001f; // ~160 Hz derivative filter
+
+Pid<float> roll_rate{cfg};
+
+// In the 8 kHz rate loop:
+float torque = roll_rate.update(rate_setpoint, gyro_x, dt);
+```
+
+## Contracts
+
+| | |
+|---|---|
+| **Construction** | Requires `pid_config_valid(cfg)`: non-negative gains, `min <= max` for both limit pairs, `derivative_tau >= 0`. Checked by `assert`. |
+| **`update`** | Always returns a value in `[output_min, output_max]`. A non-positive `dt` is a timing fault: the controller returns its last output and leaves its state unchanged. |
+| **`reset`** | Returns to the constructed state: zero integral and rate (clamped into range if zero is outside it), unprimed derivative. |
+| **Real-time** | `noexcept`, no allocation, constant time, usable in `constexpr`. |
+
+Gains are fixed at construction; there is no setter. To retune, construct a new
+controller through the lifecycle (`Unconfigured → Inactive → Active`).
+
+## Reading a timing fault in a trace
+
+`update()` trusts the `dt` it is given. A non-positive `dt` is a fault, and
+the controller holds its output and state. A positive `dt` is always
+accepted, however long. So when a loop misbehaves after a scheduler
+problem, the trace of `dt` next to the output and the integral tells which
+case it was. The scenario below replays three faults of the kind a
+scheduler produces.
+
+<TracePlayer
+  trace={timingFault}
+  title="What does the controller do when its scheduler misbehaves?"
+  description="A PI controller (k_p = 1, k_i = 10) drives a first-order plant toward 0.5 from 20 ms. The plant runs on real time at 1 kHz; the controller is called with the dt its scheduler measured, plotted at the bottom. At 50 ms a duplicated tick passes dt = 0, and at 70 ms the clock steps back and passes −1 ms. On each, the command and the integral hold for one tick, exactly, and the plant moves on. From 100 ms the controller misses 49 ticks: the actuator holds the last command, flat on the plot, while the plant keeps moving. At 149 ms it runs with dt = 50 ms. That dt is valid, so the integral takes the whole 50 ms in one step and jumps by 0.07, and the command steps down to match the new error. Pass criterion: on the two faulted ticks, the output and the integral change by exactly 0."
+  plots={[
+    { channel: 'command', title: 'Command', labels: ['u'] },
+    { channel: 'integral', title: 'Integral term', labels: ['I'] },
+    { channel: 'response', title: 'Plant output', labels: ['x'],
+      series: [{ channel: 'setpoint', label: 'setpoint', color: 4, dashed: true }] },
+    { channel: 'dt_passed', title: 'dt passed to update()', labels: ['dt'] },
+  ]}
+/>
+
+The controller cannot tell a late tick from a slow loop. A gap like the one
+at 100 ms is the scheduler's to detect: an overrun counter, or a watchdog
+that resets the controller when the gap is longer than the loop tolerates.
+
+A rejected call also leaves a debt. The controller keeps the measurement
+of the last call it accepted, so the next `dt` must be the time since
+*that* call. A scheduler that measures `dt` from the rejected call passes
+too short an interval: the derivative divides the change since the last
+accepted sample by part of the time it took, and spikes, and the integral
+misses the difference. The replay's scheduler makes that mistake. The tick
+after each fault passes 1 ms, although 2 ms have passed since the last
+accepted call. With no D term here, the only cost is 1 ms of integration;
+with one, the measured rate would double for that tick.
+
+## Scalar types
+
+`Pid<Real>` uses only `+ - * /`, `<`, and construction from an integer, so it
+works unchanged with custom arithmetic. The test suite runs the control law and
+a full closed loop (saturation, anti-windup, filtered derivative) in `double`,
+`float`, `posit<32,2>`, `posit<16,1>`, and IEEE-single `cfloat<32,8>`,
+comparing each against the `double` reference.

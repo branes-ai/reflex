@@ -145,8 +145,8 @@ Documentation: <https://branes-ai.github.io/reflex/>
 reflex/
 ├── bench/        # micro-benchmarks (per-update latency)
 ├── cmake/        # dependency pins, test/warning helpers
-├── docs/         # design notes, assessments, session records
-├── docs-site/    # Starlight documentation site + Doxygen API reference
+├── docs/         # the documentation; the site is generated from it
+├── docs-site/    # the site's components, traces and config (docs-kit)
 ├── scripts/      # developer and CI helper scripts
 ├── sdk/          # the header-only library: sdk/include/branes/reflex/
 ├── tests/        # Catch2 regression tests, one executable per file

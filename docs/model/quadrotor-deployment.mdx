@@ -1,0 +1,166 @@
+---
+title: Quadrotor Model Deployment
+description: Deployment guide for QuadrotorModel. Covers the parameters to identify, step size and timing, the validity envelope, and how the model behaves at its limits (saturation, battery sag, ground contact, invalid states).
+sidebar:
+  label: "Deployment Guide"
+  group: "Quadrotor"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import punchOut from '@site/traces/quadrotor/punch_out.json';
+import batterySag from '@site/traces/quadrotor/battery_sag.json';
+
+This guide is for integrators who use [`QuadrotorModel`](quadrotor.mdx)
+as the plant in a simulator, today racing-drone's SITL, and later as an MPC
+prediction model. It covers what to set, how to call the model, where its
+results can be trusted, and what it does at the edges. The
+[developer guide](quadrotor.mdx) has the equations and the API.
+
+## Parameters
+
+`QuadrotorParams<T>` is a plain aggregate, and its fields map one-to-one
+onto racing-drone's `VehicleConfig`. The defaults are RP-1's
+(`vehicles/rp1.yaml`). `quadrotor_params_valid()` (I1) must hold before a
+model is built.
+
+| Field | Unit | RP-1 | What it sets |
+|---|---|---|---|
+| `mass` | kg | 1 | Weight and translational inertia |
+| `inertia` | kg·m² | (0.003, 0.003, 0.005) | Diagonal J, body frame |
+| `arm_length` | m | 0.11 | Centre to rotor axis; the roll and pitch lever arm is arm/√2 |
+| `thrust_coefficient` | N/(rad/s)² | 8.9e-7 | k_f in T = k_f·ω² |
+| `torque_coefficient` | m | 0.016 | k_m: yaw torque per newton of thrust |
+| `max_thrust` | N | 12 | Per rotor; sets ω_max = √(max_thrust / k_f) |
+| `motor_time_constant` | s | 0.02 | τ of the first-order motor lag; also bounds dt |
+| `drag_linear`, `drag_quadratic` | N/(m/s), N/(m/s)² | 0 | Body-frame drag, per axis |
+| `gravity` | m/s² | 9.80665 | |
+| `ground_z` | m | 0 | Height of the ground plane, world frame |
+| `battery_capacity` | J | 1e5 | Usable energy |
+| `battery_sag` | 1 | 0 | Thrust fraction lost when the battery is empty, in [0, 1) |
+| `power_coefficient` | W/(rad/s)³ | 0 | k_p in rotor power = k_p·ω³; 0 means no drain |
+
+With RP-1, battery sag is off: `battery_sag` and `power_coefficient` are 0.
+Enable both for a run where endurance or end-of-flight authority matters
+([battery sag](#battery-sag) below).
+
+The parameters are not yet identified from flight data. Validation (BB-L4 in
+the [V&V plan](quadrotor-vv.mdx#ws7-validation-l1l5)) will replace the
+RP-1 values with measured ones and will report the residuals.
+
+## Step size and timing
+
+- **Step size.** `step()` requires 0 < dt ≤ min(10 ms, τ), which is
+  dt ≤ 10 ms with RP-1. RK4 becomes unstable on the motor lag at about
+  2.78 τ, so the bound keeps a margin. Racing-drone runs at 1–2 kHz, which is
+  well inside it.
+- **Commands are held.** The command passed to `step()` applies for the
+  whole step (zero-order hold). Commands clamp to [0, ω_max] inside the
+  model.
+- **Cost.** About 120–130 ns per step on x86 (GCC Release), so a 2 kHz loop
+  spends well under 0.1 % of its time on the model. `step()` never
+  allocates, throws, or makes system calls, and its operation count is fixed
+  for each contact arm. On the flight MCU, measure the time per step there.
+- **Determinism.** `step()` is a pure function: the same inputs give the same
+  bits within one build. Different compilers can differ in the last bits,
+  because of FMA contraction (finding 5 in the V&V plan). Compare runs across
+  builds with a tolerance, as `npm run trace-diff` does.
+
+## Validity envelope
+
+The model leaves out rotor drag and blade flapping, induced-velocity thrust
+loss in fast forward flight and climb, ground effect, motor dynamics beyond
+the lag and the speed clamp, contact dynamics, wind, and interference
+between rotors.
+
+Until validation measures it, the expected envelope is:
+
+| Quantity | Expected range |
+|---|---|
+| Airspeed | below about 5 m/s |
+| Body rates | below about 10 rad/s |
+| Rotor speeds | 10 % to 95 % of ω_max |
+
+Outside the envelope the model still runs and keeps its invariants, but its
+results are unvalidated. A racing drone leaves this envelope in most of a
+race, so treat lap-time results from SITL as a comparison between
+controllers, not a prediction of the real vehicle.
+
+## Behaviour at the limits
+
+### Rotor saturation
+
+The model clamps each command to [0, ω_max]. It does nothing else: it has
+no priority between thrust and torque. A command above ω_max on one side of
+the vehicle loses that side's share of a torque command.
+
+<TracePlayer
+  trace={punchOut}
+  title="What happens to a roll command at full throttle?"
+  description="The vehicle hovers at 1 m. At 0.1 s every rotor is commanded to ω_max, about 3672 rad/s. The rotors reach 95 % of ω_max 50 ms later, which leaves the expected envelope, and the vehicle climbs at about 3.9 g. It passes 5 m/s at 0.26 s, out of the airspeed envelope too. At 0.5 s a roll command adds 20 rad/s to the left rotors and takes 20 rad/s from the right rotors. The left rotors are already at ω_max, and their commands are clamped, so they stay there; only the right rotors slow down. The zoomed plot shows it: the left command (dashed) sits 20 rad/s above ω_max, and the left rotor does not follow it. The vehicle rolls with half the torque the command asked for, about 0.02 N·m, and loses a little thrust as it does. By 0.8 s it has rolled 0.27 rad (15°) and climbed to 9.7 m."
+  plots={[
+    { channel: 'rotor_speeds', title: 'Rotor speeds', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR (= 3 RR)', '1 RL (= 2 FL)'], setpoint: true },
+    { channel: 'rotor_speeds', title: 'Rotor speeds near ω_max (zoomed)', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR', '1 RL'], setpoint: true, yRange: [3630, 3700],
+      series: [{ channel: 'rotor_speed_max', label: 'ω_max', color: 4, dashed: true }] },
+    { channel: 'body_torque', title: 'Roll torque', components: [0], labels: ['τ_x'] },
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'] },
+    { channel: 'speed', title: 'Speed', labels: ['|v|'] },
+  ]}
+/>
+
+To keep attitude authority near full throttle, send rotor commands through
+[`control::Mixer::mix()`](../control/mixer.mdx#saturation-priority). It lowers
+the collective thrust to make room for roll and pitch, and reports when it
+did. Commanding the model directly bypasses that.
+
+### Battery sag
+
+With `battery_sag` > 0, thrust per rotor speed falls as the energy drawn, E,
+grows: $s = 1 - \mathrm{sag}\cdot\min(E/\mathrm{capacity}, 1)$. Hovering then
+needs faster rotors, and the most thrust the vehicle can make falls with s.
+
+<TracePlayer
+  trace={batterySag}
+  title="How much headroom does a draining battery leave?"
+  description="The vehicle hovers at 1 m. The battery is shortened to 1.5 kJ, instead of RP-1's 100 kJ, so that it empties in seconds. With battery_sag 0.3 and power_coefficient 8e-9 W/(rad/s)³, hover draws about 150 W. Each step, the scenario commands the rotor speed whose thrust at the current scale carries the weight, as a perfect altitude controller would. The hover speed climbs from 1660 to 1984 rad/s as the thrust scale falls from 1 to 0.7. The battery is empty at 8.1 s, and from then on the scale stays at 0.7. The most thrust available falls from 4.9 to 3.4 times the weight. The rotors trail the rising command by their lag, so the vehicle sinks about 0.5 m over the run."
+  view={false}
+  plots={[
+    { channel: 'rotor_speeds', title: 'Rotor speed for hover', components: [0], labels: ['rotor 0'], setpoint: true },
+    { channel: 'thrust_scale', title: 'Thrust scale s', labels: ['s'] },
+    { channel: 'thrust_to_weight_max', title: 'Maximum thrust to weight', labels: ['4·s·T_max / mg'] },
+    { channel: 'battery_used', title: 'Battery used', labels: ['E / capacity'] },
+  ]}
+/>
+
+At the end of a flight, an aggressive manoeuvre that fitted at take-off may
+no longer fit. Give the controller's thrust limits the sagged value, or
+reserve headroom for it.
+
+### Ground contact
+
+Contact is a stop. A grounded vehicle stays put while its vertical thrust is
+at most its weight, and a vehicle that reaches the ground stops at once and
+keeps its attitude, even inverted. There is no friction, bounce, or
+tip-over. This suits take-off and idle on the pad. It does not suit
+landing or crash studies. See the
+[ground contact animation](quadrotor-vv.mdx#ground-contact).
+
+### Invalid states
+
+`step()` requires a valid state (I2–I5), and a Debug build asserts it. If
+your code writes the state between steps, for example to reset it from an
+estimator, check it with `quadrotor_state_violation()`. The
+[developer guide](quadrotor.mdx#finding-a-violation) shows how a caller
+bug produces a violation and how to find it.
+
+## Consumer contract
+
+| | |
+|---|---|
+| Preconditions | Valid parameters (I1); a valid state (I2–I5); finite commands; 0 < dt ≤ min(10 ms, τ) |
+| Postcondition | The new state is valid (I2–I5) |
+| Purity | A function of (state, command, dt) and the parameters; no hidden state |
+| Resources | No allocation, exceptions, or system calls; a fixed operation count per contact arm |
+| Scalar types | Any type with the arithmetic, `sqrt`, `abs`, `isfinite`, and `numeric_limits`; tested in double, float, `posit<16,1>`, and bfloat16 |
+| Not smooth | The rotor clamp, the energy clamp, and ground contact. An MPC should linearize `derivative()` in free flight |

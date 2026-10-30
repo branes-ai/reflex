@@ -1,7 +1,7 @@
 #pragma once
 
 /// reflex-trace/1 writer: the C++ side of the trace format that the docs-site
-/// player renders (docs-site/src/content/docs/standards/animation.md, "Trace
+/// player renders (docs/standards/animation.md, "Trace
 /// schema"). Host-side tooling only; nothing in branes::reflex depends on it.
 ///
 /// A Trace collects samples in memory and serializes them once, so the file is

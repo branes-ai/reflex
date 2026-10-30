@@ -18,7 +18,7 @@
     "wasm-agree": "node scripts/trace/wasm-agree.mjs"
   },
   "dependencies": {
-    "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.2.0",
+    "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.2.1",
     "ajv": "^8.17.1",
     "three": "^0.180.0"
   }

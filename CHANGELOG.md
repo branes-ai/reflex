@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.3](https://github.com/branes-ai/reflex/compare/v0.6.2...v0.6.3) (2026-10-29)
+
+
+### Documentation
+
+* **control:** cascade block pages and live widgets (animation plan p3, part 3) ([#48](https://github.com/branes-ai/reflex/issues/48)) ([adf4477](https://github.com/branes-ai/reflex/commit/adf44773602f38be26c3afae4cbef32696ddfe03))
+
 ## [0.6.2](https://github.com/branes-ai/reflex/compare/v0.6.1...v0.6.2) (2026-10-29)
 
 

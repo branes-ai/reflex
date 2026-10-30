@@ -157,6 +157,11 @@ jobs:
       - name: Build docs site
         working-directory: docs-site
         run: npm run build
+      - name: Check the site's links and anchors
+        # The site is generated from docs/ by docs-kit: a broken relative link
+        # or anchor in a document fails here, before the deploy.
+        working-directory: docs-site
+        run: npm run check
       - name: Size budget
         working-directory: docs-site
         run: npm run size-budget -- --require-wasm

@@ -1,0 +1,192 @@
+---
+title: How the Quadrotor Model Works
+description: An explainer for QuadrotorModel, built up one idea at a time, from rotor thrust and torque through motor lag and attitude to torque-free rotation, with animations generated from the model's own code.
+sidebar:
+  label: "Explainer"
+  group: "Quadrotor"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import rotorTorques from '@site/traces/quadrotor/rotor_torques.json';
+import motorLag from '@site/traces/quadrotor/motor_lag.json';
+import rollPulse from '@site/traces/quadrotor/roll_pulse.json';
+import tumble from '@site/traces/quadrotor/tumble.json';
+
+This page explains how [`QuadrotorModel`](quadrotor.mdx) turns four
+rotor speed commands into the motion of a rigid body. It builds the model up
+one idea at a time: rotor, then thrust and torque, motor lag, attitude, and
+translation. A last section shows a rigid-body effect that has nothing to do
+with the rotors.
+
+Every animation plays a trace recorded from the model's own C++ (the
+scenario is linked under each player). Nothing on this page computes
+dynamics in the browser. The controls, the keys, and the conventions are
+described on the [Trace Player](../standards/trace-player.mdx#player-behaviour)
+page.
+
+## The vehicle
+
+The model is a rigid body with four rotors in the PX4 Quad X layout. The
+world frame has z up. The body frame has x forward, y left, and z up.
+
+| Rotor | Position | Spin, seen from above |
+|---|---|---|
+| 0 | front right | counter-clockwise |
+| 1 | rear left | counter-clockwise |
+| 2 | front left | clockwise |
+| 3 | rear right | clockwise |
+
+The default parameters are RP-1's: 1 kg, an arm of 0.11 m, and a hover speed
+of about 1660 rad/s per rotor. Each rotor can make up to 12 N, which it does
+at ω_max ≈ 3672 rad/s.
+
+## 1. Each rotor pushes and twists
+
+A rotor spinning at ω makes a thrust $T = k_f\,\omega^2$ along body z. Since
+the rotor sits off the centre of mass, the thrust also makes a torque about
+body x and y. Spinning the air one way pushes the body the other way about z.
+A counter-clockwise rotor makes a yaw torque of $-k_m T$.
+
+*Before you play:* rotor 0 is front right. When it spins alone, which way
+does the vehicle want to roll, and which way to pitch?
+
+<TracePlayer
+  trace={rotorTorques}
+  title="Which way does each rotor push and twist the body?"
+  description="The vehicle sits on the ground with its rotors stopped. Each rotor in turn spins up to 90 % of the hover speed, alone, for 0.4 s. One rotor makes about 2 N, a fifth of the weight, so the vehicle never lifts off and stays still. The torque plot shows what each rotor would do to an airborne vehicle. Rotor 0 (front right) makes negative roll and negative pitch: it lifts the right side and the nose. Rotor 1 (rear left) makes the opposite. Each makes 0.15 N·m about x and y. The yaw torque is five times smaller, and its sign follows the spin: negative for the counter-clockwise rotors 0 and 1, positive for 2 and 3. With all four running, the torques cancel and the thrust is 81 % of the weight."
+  plots={[
+    { channel: 'rotor_thrusts', title: 'Rotor thrusts', labels: ['0 FR', '1 RL', '2 FL', '3 RR'] },
+    { channel: 'body_torque', title: 'Body torque', labels: ['roll (x)', 'pitch (y)', 'yaw (z)'] },
+    { channel: 'total_thrust', title: 'Total thrust', labels: ['ΣT'],
+      series: [{ channel: 'weight', label: 'weight', dashed: true }] },
+  ]}
+/>
+
+The torque is the model's own. The scenario reads it from `derivative()`
+as J·ω̇ while the body rates are zero, so the gyroscopic term vanishes. A
+grounded vehicle stays put while its vertical thrust is at most its weight,
+which is why the vehicle does not move here. The
+[ground contact](quadrotor-vv.mdx#ground-contact) animation on the V&V
+page shows that rule at take-off and landing.
+
+The four rotors give four independent controls: total thrust, and torque
+about x, y, and z. The [mixer](../control/mixer.mdx) inverts this map.
+
+## 2. Rotors lag their commands
+
+A rotor cannot change speed at once. The model treats each motor as a
+first-order lag with time constant τ = 20 ms:
+$\dot\omega = (u - \omega)/\tau$, with the command u clamped to $[0, \omega_{max}]$.
+
+*Before you play:* the command jumps by 10 %. How long until the thrust has
+made most of that change?
+
+<TracePlayer
+  trace={motorLag}
+  live="motor_lag"
+  prompt="make τ slower, say 60 ms. Does the vehicle gain as much upward speed by 0.25 s, when the command drops? Then make τ 5 ms, and look at the check."
+  title="How quickly does a rotor follow its command?"
+  description="The vehicle hovers at 1 m. At 0.05 s every rotor is commanded 10 % faster. The rotor speed follows along an exponential: 63 % of the step after one time constant (20 ms, at 0.07 s), and 95 % after three. The thrust grows with the square of the speed, so it rises by about 21 %, and the vehicle accelerates upward at about 2 m/s². At 0.25 s the command returns to the hover speed, and the rotors slow down along the same curve. The vehicle keeps the upward speed it gained, because nothing brakes it."
+  plots={[
+    { channel: 'rotor_speeds', title: 'Rotor speed', components: [0], labels: ['rotor 0'], setpoint: true },
+    { channel: 'total_thrust', title: 'Total thrust', labels: ['ΣT'],
+      series: [{ channel: 'weight', label: 'weight', dashed: true }] },
+    { channel: 'velocity', title: 'Vertical velocity', components: [2], labels: ['v_z'] },
+  ]}
+/>
+
+The sliders rerun the scenario's C++, compiled to WebAssembly, in your
+browser. With a slow motor the thrust arrives late and leaves late. At
+τ = 60 ms the vehicle has gained 0.29 m/s by 0.25 s instead of 0.37 m/s,
+and it makes up most of the difference after the command drops. At τ = 5 ms the check fails. The
+motor is fine, but the 1 ms integration step is now a fifth of τ, and the
+integrator's error passes the check's limit. A step size must stay small
+against the fastest time constant, which is why `step()` requires dt ≤ τ.
+
+The check under the player compares the recorded rotor speed with the
+closed-form step response at every sample. An exact solution like this is
+how the V&V plan verifies each term of the equations (BB-V1).
+
+For a controller, the lag is the first thing it has to live with. A torque
+commanded now arrives over the next few tens of milliseconds.
+
+## 3. Torque turns the body, and tilted thrust moves it
+
+Rotation and translation are coupled only through the direction of the
+thrust. A roll torque does not move the vehicle sideways by itself. It
+tilts the thrust vector, and the horizontal part of the tilted thrust
+accelerates the vehicle.
+
+*Before you play:* the left rotors speed up and the right rotors slow down,
+then the reverse. Where does the vehicle end up, and does it stay level
+afterwards?
+
+<TracePlayer
+  trace={rollPulse}
+  title="What does a roll torque pulse do to an uncontrolled quadrotor?"
+  description="The vehicle hovers at 1 m. At 0.1 s the left rotors (1 and 2) are commanded 40 rad/s faster and the right rotors (0 and 3) 40 rad/s slower. The rotors follow with their 20 ms lag, and the vehicle starts to roll right side down. At 0.22 s the commands reverse, which brakes the roll. At 0.34 s every rotor is commanded back to the hover speed. The vehicle is left rolled by about 0.18 rad (10°). Nothing levels it, because there is no controller. The tilted thrust pushes the vehicle to the right (−y), and since only part of the thrust now points up, it slowly sinks: about 1.4 m sideways and 0.11 m down by 1.5 s."
+  plots={[
+    { channel: 'rotor_speeds', title: 'Rotor speeds', components: [0, 1], colors: [1, 2],
+      labels: ['0 FR (= 3 RR)', '1 RL (= 2 FL)'], setpoint: true },
+    { channel: 'roll_pitch_yaw', title: 'Roll angle', components: [0], labels: ['roll'] },
+    { channel: 'body_rates', title: 'Roll rate', components: [0], labels: ['p (body x)'] },
+    { channel: 'position', title: 'Position', components: [1, 2], labels: ['y', 'z'] },
+  ]}
+/>
+
+The order of effects is the chain a controller works through in reverse:
+rotor speed, then torque, roll rate, roll angle, and only then sideways
+acceleration. A position controller therefore commands an attitude, and an
+attitude controller commands rates, which is the
+[cascade](../control/cascade.mdx) structure.
+
+## 4. A free body that flips
+
+The rate equation $\dot\omega = J^{-1}(\tau - \omega \times J\omega)$ has a
+second term that does not come from the rotors. It is the gyroscopic term
+of a rigid body, and it matters even with no torque at all. A body with
+three different moments of inertia spins steadily about its largest and
+its smallest axis. About the middle axis, any small disturbance grows, and
+the body flips end over end (the intermediate-axis theorem, or
+Dzhanibekov effect).
+
+RP-1's inertia is (3, 3, 5)·10⁻³ kg·m². Its x and y moments are equal, so it
+has no middle axis. This scenario uses (2, 4, 6)·10⁻³ kg·m² instead.
+
+*Before you play:* the vehicle spins at 6 rad/s about body y, the middle
+axis, and nothing pushes on it. Does the spin stay about y?
+
+<TracePlayer
+  trace={tumble}
+  live="tumble"
+  prompt="the spin is about body y. Make J_y the largest of the three moments, or the smallest. Does the vehicle still flip?"
+  title="Why does a spin about the middle axis flip over?"
+  description="The rotors are off, so there is no torque. The vehicle spins at 6 rad/s about body y, with a 0.1 rad/s disturbance about x and z. Gravity is set to 10⁻⁶ m/s² to keep the vehicle in view: gravity acts at the centre of mass and exerts no torque, so the rotation is the same as in free fall. For about 1.5 s the spin stays about y while the disturbance grows. Then the body flips: the y rate passes through zero and reverses, while the x and z rates surge and fall back. It flips back at about 4.6 s. Through all of this, the kinetic energy and the angular momentum vector in the world frame stay flat. The body rates change because the body turns, not because anything acts on it."
+  plots={[
+    { channel: 'body_rates', title: 'Body rates', labels: ['p (x)', 'q (y)', 'r (z)'] },
+    { channel: 'angular_momentum', title: 'Angular momentum, world frame', labels: ['L_x', 'L_y', 'L_z'] },
+    { channel: 'kinetic_energy', title: 'Kinetic energy', labels: ['E'] },
+  ]}
+/>
+
+With the sliders, make y the largest or the smallest axis: the spin then
+stays about y, and only wobbles. Only the middle axis is unstable.
+
+The two flat plots are a check on the integrator as much as a fact of
+physics. Classical RK4 does not conserve energy or momentum exactly. At
+dt = 1 ms the drift over 5 s stays near 10⁻¹¹ of the initial values, which
+the check under the player bounds (BB-V3). The motion is also sensitive to
+roundoff near the flip. A 10⁻¹⁵ rad/s change in the initial rate moves the
+trace by about 10⁻¹¹ rad/s, which is still well inside the tolerance the
+docs CI uses to compare a regenerated trace with this one.
+
+## Where to go next
+
+- The [developer guide](quadrotor.mdx) has the equations, the
+  invariants, and the API.
+- The [V&V plan](quadrotor-vv.mdx) shows how the model is verified, with
+  animations of the mirror symmetry, the convergence with step size, and
+  ground contact.
+- The [deployment guide](quadrotor-deployment.mdx) covers what an
+  integrator needs: parameters, timing, the validity envelope, and
+  behaviour at the limits.

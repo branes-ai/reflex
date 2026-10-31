@@ -3,9 +3,9 @@
 // tools/trace/scenarios/, grouped by block, with its checks and status, the
 // player that explains it, and a link to its own page with every channel.
 import { scenarios, report, blockLabel } from '../../lib/trace/gallery.js';
-import { escapeHtml, fmt } from './parts';
+import { escapeHtml, fmt } from '@branes-ai/trace-player/parts';
 import ScenarioStatus from './ScenarioStatus.astro';
-import { failing } from '../../lib/trace/status.js';
+import { failing } from '@branes-ai/trace-player/status';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 // Snake-case names break after their underscores, not mid-word.

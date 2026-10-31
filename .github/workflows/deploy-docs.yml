@@ -13,7 +13,8 @@ name: Deploy Documentation
 #
 # One-time setup (repo admin, cannot be automated here): Settings → Pages →
 # Build and deployment → Source = "GitHub Actions". After that, every push
-# to main touching docs/, docs-site/, the public headers (API reference), the
+# to main touching docs/, docs-site/, the shared trace player (packages/),
+# the public headers (API reference), the
 # scenarios and tools behind the widgets, or this workflow redeploys, and so
 # does the nightly schedule.
 
@@ -23,6 +24,7 @@ on:
     paths:
       - 'docs/**'
       - 'docs-site/**'
+      - 'packages/**'
       - 'sdk/include/**'
       - 'tools/**'
       - 'scripts/build-wasm.sh'

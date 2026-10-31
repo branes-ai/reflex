@@ -6,9 +6,9 @@
 import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
 import TracePlayer from '../../../components/trace/TracePlayer.astro';
 import ScenarioStatus from '../../../components/trace/ScenarioStatus.astro';
-import { fmt } from '../../../components/trace/parts';
+import { fmt } from '@branes-ai/trace-player/parts';
 import { scenarios, report, blockLabel, derivePlots, describe, constants } from '../../../lib/trace/gallery.js';
-import { channelUnit } from '../../../lib/trace/channels.js';
+import { channelUnit } from '@branes-ai/trace-player/channels';
 
 export function getStaticPaths() {
   return scenarios().map((s) => ({ params: { block: s.dir, name: s.name }, props: { s } }));

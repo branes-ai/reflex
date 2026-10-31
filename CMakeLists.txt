@@ -39,6 +39,9 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/deps.cmake)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/warnings.cmake)
 
 add_subdirectory(sdk)
+# The reflex-trace/1 writer, branes::reflex_trace: header-only, and defined
+# for consumers as well, which export their own traces with it.
+add_subdirectory(tools/trace)
 
 if(REFLEX_BUILD_BENCH)
     add_subdirectory(bench)

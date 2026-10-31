@@ -1,13 +1,8 @@
 # tools/ — host-side developer tools. Nothing here is a dependency of
 # branes::reflex.
 
-# reflex-trace/1 writer (header-only), for scenario executables that produce
-# the traces the docs-site player renders.
-add_library(reflex_trace INTERFACE)
-add_library(branes::reflex_trace ALIAS reflex_trace)
-target_include_directories(reflex_trace INTERFACE
-    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/trace/include>)
-target_compile_features(reflex_trace INTERFACE cxx_std_20)
+# The reflex-trace/1 writer, branes::reflex_trace, is defined in trace/
+# (from the top-level CMakeLists.txt), for consumers too.
 
 # Under Emscripten, tools/ builds only the WebAssembly module of the docs
 # site's live widgets (scripts/build-wasm.sh); the native trace executables

@@ -4,7 +4,7 @@
 // a trace that fails) and by scripts/trace/check.mjs in CI.
 
 import Ajv2020 from 'ajv/dist/2020.js';
-import schema from '../../../schemas/reflex-trace-1.schema.json' with { type: 'json' };
+import schema from '../../schemas/reflex-trace-1.schema.json' with { type: 'json' };
 
 // The channel tables live in channels.js, which the browser loads without
 // ajv; they are re-exported here for the build-time callers.

@@ -17,6 +17,8 @@ export interface PlotSpec {
   colors?: number[];
   /** Overlay `<channel>_setpoint` as dashed lines of the same colors. */
   setpoint?: boolean;
+  /** What the dashed setpoint is, in the legend (default "command"). */
+  setpointLabel?: string;
   /** Fixed y-axis range [lo, hi], to zoom in on part of a signal; lines are clipped to it. Default: fit the data. */
   yRange?: [number, number];
   /** Further series from other channels, in the same units (for example a limit, or a second run). */
@@ -220,7 +222,7 @@ export function renderPlot(trace: Trace, spec: PlotSpec, key = '') {
   return {
     title,
     svg,
-    dashed: Boolean(setpoint),
+    dashed: setpoint ? (spec.setpointLabel ?? 'command') : undefined,
     legend: [
       ...comps.map((_, j) => ({ label: labels[j], color: colors[j], dashed: false })),
       ...extra.map((e) => ({ label: e.label, color: e.color, dashed: Boolean(e.dashed) })),
@@ -346,7 +348,7 @@ function renderBars(trace: Trace, spec: BarsSpec) {
   return {
     title,
     svg,
-    dashed: false,
+    dashed: undefined,
     legend: [
       { label: spec.label, color: 1, dashed: false },
       ...(spec.compare ? [{ label: spec.compare.label, color: 3, dashed: false }] : []),
@@ -461,7 +463,7 @@ function renderSpectrogram(trace: Trace, spec: SpectrogramSpec, key: string) {
   return {
     title: spec.title,
     svg,
-    dashed: false,
+    dashed: undefined,
     legend: spec.overlay ? [{ label: spec.overlay.label, color: 2, dashed: false }] : [],
     scale: { lo: `${fmt(lo)} dB`, hi: `${fmt(hi)} dB`, unit: `level, dB re 1${unitLabel}` },
     readout: { items: [] as { channel: string; component: number }[], decimals: 0, spectrogram: readout },

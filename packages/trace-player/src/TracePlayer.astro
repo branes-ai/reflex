@@ -37,9 +37,14 @@ interface Props {
   live?: LiveSpec;
   /** For a live widget: what to predict before moving a slider (ANI-8). */
   prompt?: string;
+  /** The GitHub repository the footer links the scenario and commit to (default reflex's). */
+  repo?: string;
+  /** How the trace is kept, in the footer (default "checked by CI against a fresh run"). */
+  provenanceNote?: string;
 }
 
-const { trace, title, description, plots, thrustScale = 0.04, ghost, live, prompt } = Astro.props;
+const { trace, title, description, plots, thrustScale = 0.04, ghost, live, prompt, repo, provenanceNote } = Astro.props;
+const footer = { repo, note: provenanceNote };
 const errors = validateTrace(trace);
 if (errors.length) {
   throw new Error(`TracePlayer "${title}": invalid reflex-trace/1 trace:\n  ${errors.join('\n  ')}`);
@@ -67,6 +72,7 @@ const config = {
   thrustScale,
   panels: panels.map((x) => x.readout),
   ghost,
+  footer,
   live: live && { ...live, plots, key: id },
 };
 ---
@@ -136,7 +142,7 @@ const config = {
                   <span class="tp-value" data-readout={j}></span>
                 </span>
               ))}
-              {panel.dashed && <span class="tp-key tp-muted">dashed: command</span>}
+              {panel.dashed && <span class="tp-key tp-muted">dashed: {panel.dashed}</span>}
               {'scale' in panel && panel.scale && (
                 <span class="tp-key tp-scale-key">
                   {panel.scale.lo}<span class="tp-ramp" aria-hidden="true"></span>{panel.scale.hi}
@@ -185,7 +191,7 @@ const config = {
 
   <div data-events set:html={renderEvents(trace)} />
   <div data-checks set:html={renderChecks(trace)} />
-  <footer class="tp-prov" data-prov set:html={renderProvenance(trace)} />
+  <footer class="tp-prov" data-prov set:html={renderProvenance(trace, false, footer)} />
 
   <script type="application/json" data-trace set:html={JSON.stringify({ trace, config }).replace(/</g, '\\u003c')} />
 </figure>

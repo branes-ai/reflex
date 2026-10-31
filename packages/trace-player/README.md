@@ -50,6 +50,8 @@ import hop from '../traces/scripted_hop.json';
   plots={[
     { channel: 'position', title: 'Position', labels: ['x', 'y', 'z'] },
   ]}
+  repo="https://github.com/branes-ai/racing-drone"
+  provenanceNote="a recorded SITL run"
 />
 ```
 
@@ -61,12 +63,14 @@ The props:
 | `trace` | The parsed trace, usually a JSON import |
 | `title` | The one question the animation answers (ANI-7) |
 | `description` | A text description of what happens (ANI-10) |
-| `plots` | Time plots (`{ channel, title, labels, setpoint?, colors? }`), bar panels (`kind: 'bars'`), and spectrograms (`kind: 'spectrogram'`) |
+| `plots` | Time plots (`{ channel, title, labels, setpoint?, setpointLabel?, colors? }`), bar panels (`kind: 'bars'`), and spectrograms (`kind: 'spectrogram'`) |
 | `view` | Show the 3-D view; the default is true, and the view needs `position` and `attitude` channels |
 | `thrustScale` | The thrust-arrow scale in m/N, shown on screen (ANI-5) |
 | `ghost` | A second run drawn translucent beside the first: `{ position, attitude, thrusts? }` channel names |
 | `live` | `{ scenario, params, wasm }`: sliders that rerun the scenario in a WebAssembly module (see `src/lib/live.js` for the module's contract) |
 | `prompt` | For a live widget: what to predict before moving a slider (ANI-8) |
+| `repo` | The GitHub repository the footer links the scenario and the commit to; the default is reflex, so set it to yours |
+| `provenanceNote` | How the trace is kept, at the end of the footer; the default, "checked by CI against a fresh run", is true of reflex's traces |
 
 In CI, validate the traces a site commits:
 

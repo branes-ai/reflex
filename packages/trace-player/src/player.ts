@@ -33,7 +33,7 @@ interface LiveConfig {
 
 interface Payload {
   trace: Trace;
-  config: { thrustScale: number; panels: Readout[]; ghost?: GhostSpec; live?: LiveConfig };
+  config: { thrustScale: number; panels: Readout[]; ghost?: GhostSpec; footer: FooterOptions; live?: LiveConfig };
 }
 
 export interface ViewHandle {
@@ -44,7 +44,7 @@ export interface ViewHandle {
 
 import type { GhostSpec } from './vehicle-view';
 import { barGeometry, renderPanel, type BarsReadout, type PanelSpec, type SpectrogramReadout } from './plot';
-import { eventTime, renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
+import { eventTime, renderChecks, renderEvents, renderProvenance, type FooterOptions, type TraceParts } from './parts';
 import { runLive, type LiveParam } from './lib/live.js';
 
 // One WebAssembly module per page, loaded on the first slider move.
@@ -107,6 +107,11 @@ function attach(root: HTMLElement) {
       else hi = mid - 1;
     }
     return lo;
+  };
+  // An event's sample: the first at or after it, so the overlay names it.
+  const eventIndex = (time: number) => {
+    const k = indexAt(time);
+    return k < n - 1 && t[k] < time - 1e-9 * (t[n - 1] - t[0]) ? k + 1 : k;
   };
 
   function render() {
@@ -197,7 +202,7 @@ function attach(root: HTMLElement) {
     const b = (ev.target as HTMLElement).closest<HTMLButtonElement>('[data-seek]');
     if (!b) return;
     setPlaying(false);
-    seek(indexAt(Number(b.dataset.seek)));
+    seek(eventIndex(Number(b.dataset.seek)));
   });
 
   // Scrubbing on any plot. The listeners sit on the panel's SVG host, which
@@ -240,7 +245,7 @@ function attach(root: HTMLElement) {
     paintAll();
     parts.events.innerHTML = renderEvents(trace);
     parts.checks.innerHTML = renderChecks(trace);
-    parts.prov.innerHTML = renderProvenance(trace, live);
+    parts.prov.innerHTML = renderProvenance(trace, live, config.footer);
     view?.setTrace(trace);
     seek(Math.min(index, n - 1));
   }

@@ -21,7 +21,18 @@ export interface TraceParts {
   checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean; expect?: string }[];
 }
 
-const REPO = 'https://github.com/branes-ai/reflex';
+const DEFAULT_REPO = 'https://github.com/branes-ai/reflex';
+const NOTE = 'checked by CI against a fresh run';
+
+/**
+ * What the footer links to and says about the trace: `repo`, the GitHub
+ * repository that holds the scenario and the commit (default reflex), and
+ * `note`, how the trace is kept (default: checked by CI against a fresh run).
+ */
+export interface FooterOptions {
+  repo?: string;
+  note?: string;
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -70,8 +81,9 @@ export function playerId(provenance: { block: string; scenario: string }, title:
 }
 
 /** The footer's contents. `live` marks a trace computed in the reader's browser. */
-export function renderProvenance(trace: TraceParts, live = false): string {
+export function renderProvenance(trace: TraceParts, live = false, footer: FooterOptions = {}): string {
   const p = trace.provenance;
+  const REPO = (footer.repo ?? DEFAULT_REPO).replace(/\/$/, '');
   const code = (s: string) => `<code>${escapeHtml(s)}</code>`;
   const commit = /^[0-9a-f]{7,40}$/.test(p.commit) ? `<a href="${REPO}/commit/${p.commit}">${code(p.commit)}</a>` : code(p.commit);
   const spans = [
@@ -83,7 +95,7 @@ export function renderProvenance(trace: TraceParts, live = false): string {
     `${live ? 'Built from' : 'Generated at'} ${commit}`,
     live
       ? `Format ${code(trace.schema)}, computed in this browser by the same C++ compiled to WebAssembly`
-      : `Format ${code(trace.schema)}, checked by CI against a fresh run`,
+      : `Format ${code(trace.schema)}, ${escapeHtml(footer.note ?? NOTE)}`,
   ];
   return spans.map((s) => `<span>${s}</span>`).join('');
 }

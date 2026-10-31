@@ -80,6 +80,7 @@ import rollPulse from '@site/traces/quadrotor/roll_pulse.json';
 | `ghost` | A second run drawn translucent beside the first: `{ position, attitude, thrusts?, label }` name its channels |
 | `live` | Makes the player a live widget: the name of a scenario in `src/lib/trace/live.js` ([live widgets](#live-widgets)) |
 | `prompt` | For a live widget: what to predict before moving a slider (ANI-8) |
+| `repo`, `provenanceNote` | For a trace from another repo: the GitHub repository the footer links the scenario and commit to, and how the trace is kept (defaults: reflex, and "checked by CI against a fresh run") |
 
 Each entry of `plots` takes:
 
@@ -87,7 +88,7 @@ Each entry of `plots` takes:
 |---|---|
 | `channel`, `title` | The channel to plot, and the panel title; the unit is appended |
 | `components`, `labels`, `colors` | Which components of a vector channel, their legend labels, and their colour slots (1–4) |
-| `setpoint` | Overlay `<channel>_setpoint`, dashed in the same colours |
+| `setpoint`, `setpointLabel` | Overlay `<channel>_setpoint`, dashed in the same colours, named in the legend by `setpointLabel` (default "command") |
 | `series` | More lines from other channels in the same unit: `{ channel, component?, label, color?, dashed? }`, for a limit, a reference, or a second run |
 | `yRange` | A fixed y-axis range `[lo, hi]` to zoom in on part of a signal; lines are clipped to it, and the axis ticks show the range |
 

@@ -58,6 +58,17 @@ export function renderChecks(trace: TraceParts): string {
   return `<ul class="tp-checks">${items}</ul>`;
 }
 
+/**
+ * The player's element id, unique on a page even when several players show
+ * one trace: the title, which differs between players, is hashed into it
+ * (FNV-1a, 32 bits). The scenario gallery links to players by it.
+ */
+export function playerId(provenance: { block: string; scenario: string }, title: string): string {
+  let hash = 0x811c9dc5;
+  for (const c of title) hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
+  return `tp-${provenance.block.replace(/\W+/g, '-')}-${provenance.scenario.split('/').pop()?.replace(/\W+/g, '-')}-${hash.toString(36)}`;
+}
+
 /** The footer's contents. `live` marks a trace computed in the reader's browser. */
 export function renderProvenance(trace: TraceParts, live = false): string {
   const p = trace.provenance;

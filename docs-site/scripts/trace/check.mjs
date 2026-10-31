@@ -15,9 +15,14 @@
 // that the scenario gallery shows (the deploy workflow writes it, nightly):
 //   { "commit", "date", "run", "runs": { "<label>": { "compiler",
 //     "traces": { "<block>/<name>.json": "match" | "stale" | "missing" | "invalid" },
-//     "extra": [ "<block>/<name>.json", … ] } } }
+//     "extra": [ "<block>/<name>.json", … ] } }, "published": "<label>" }
+//
+// --publish DIR copies the regenerated traces that are valid into DIR (the
+// deploy workflow passes src/traces for the gcc run), so that the site plays
+// the fresh run; where the run wrote an invalid trace, or none, the committed
+// one stays. The report names that run as `published`.
 
-import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
@@ -42,11 +47,13 @@ const regenDir = regenIndex >= 0 ? resolve(args[regenIndex + 1] ?? '') : null;
 const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
 const reportPath = option('--report');
 const label = option('--label') ?? 'regen';
-if (reportPath && !regenDir) {
-  console.error('--report needs --regen');
+const publishDir = option('--publish');
+if ((reportPath || publishDir) && !regenDir) {
+  console.error('--report and --publish need --regen');
   process.exit(2);
 }
 const outcome = {};
+const valid = [];  // regenerated traces that parse and validate, for --publish
 let compiler;
 
 let failed = false;
@@ -54,6 +61,24 @@ const fail = (msg) => {
   console.error(`FAIL ${msg}`);
   failed = true;
 };
+
+/** The regenerated trace, or undefined (and a failure) when it is not valid. */
+function loadRegen(rel) {
+  let trace;
+  try {
+    trace = JSON.parse(readFileSync(join(regenDir, rel), 'utf8'));
+  } catch (e) {
+    fail(`${rel}: regenerated trace is not JSON: ${e.message}`);
+    return undefined;
+  }
+  const errors = validateTrace(trace);
+  if (errors.length) {
+    fail(`${rel}: regenerated trace is invalid`);
+    for (const e of errors) console.error(`  ${e}`);
+    return undefined;
+  }
+  return trace;
+}
 
 const committed = listJson(committedDir);
 if (committed.length === 0) fail(`no traces under ${relative(process.cwd(), committedDir)}`);
@@ -81,21 +106,12 @@ for (const rel of committed) {
     outcome[rel] = 'missing';
     continue;
   }
-  let regen;
-  try {
-    regen = JSON.parse(readFileSync(regenPath, 'utf8'));
-  } catch (e) {
-    fail(`${rel}: regenerated trace is not JSON: ${e.message}`);
+  const regen = loadRegen(rel);
+  if (!regen) {
     outcome[rel] = 'invalid';
     continue;
   }
-  const regenErrors = validateTrace(regen);
-  if (regenErrors.length) {
-    fail(`${rel}: regenerated trace is invalid`);
-    for (const e of regenErrors) console.error(`  ${e}`);
-    outcome[rel] = 'invalid';
-    continue;
-  }
+  valid.push(rel);
   compiler ??= regen.provenance.compiler;
   const { equivalent, failures } = diffTraces(regen, trace, 'regen');
   if (!equivalent) {
@@ -115,6 +131,7 @@ if (regenDir) {
     if (!committed.includes(rel)) {
       fail(`${rel}: regenerated but not committed under src/traces/`);
       extra.push(rel);
+      if (loadRegen(rel)) valid.push(rel);
     }
   }
 }
@@ -134,9 +151,19 @@ if (reportPath) {
   report.date ??= new Date().toISOString();
   if (env.GITHUB_RUN_ID) report.run = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`;
   report.runs[label] = { compiler: compiler ?? 'unknown', traces: outcome, extra };
+  if (publishDir) report.published = label;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(report, null, 2)}\n`);
   console.log(`wrote ${relative(process.cwd(), path)} (${label})`);
+}
+
+if (publishDir) {
+  for (const rel of valid) {
+    const to = join(resolve(publishDir), rel);
+    mkdirSync(dirname(to), { recursive: true });
+    copyFileSync(join(regenDir, rel), to);
+  }
+  console.log(`copied ${valid.length} regenerated traces to ${relative(process.cwd(), resolve(publishDir))}`);
 }
 
 process.exit(failed ? 1 : 0);

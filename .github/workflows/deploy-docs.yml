@@ -103,18 +103,23 @@ jobs:
       - name: Run the scenario suite (gcc and clang)
         # Each compiler's traces are compared with the committed ones, and the
         # outcome goes to src/run/report.json, which the gallery shows. The
-        # site plays the gcc run. A failure is recorded here, not fatal, so
-        # that it is published; the verdict job fails the workflow after.
+        # site plays the gcc run's valid traces (--publish), and the committed
+        # trace where that run wrote none or an invalid one. A failure is
+        # recorded here, not fatal, so that it is published; the verdict job
+        # fails the workflow after.
         id: suite
         run: |
           failed=0
-          for cc in gcc clang; do
+          # clang first: gcc's --publish replaces src/traces, which the
+          # other run is compared against.
+          for cc in clang gcc; do
             cmake --preset "$cc-release" -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF
             scripts/gen-traces.sh "$cc-release" "build/traces-$cc" || failed=1
+            publish=()
+            [ "$cc" = gcc ] && publish=(--publish src/traces)
             (cd docs-site && node scripts/trace/check.mjs --regen "../build/traces-$cc" \
-               --report src/run/report.json --label "$cc") || failed=1
+               --report src/run/report.json --label "$cc" "${publish[@]}") || failed=1
           done
-          cp -r build/traces-gcc/. docs-site/src/traces/
           echo "failed=$failed" >> "$GITHUB_OUTPUT"
 
       - name: Build site (docs-kit)

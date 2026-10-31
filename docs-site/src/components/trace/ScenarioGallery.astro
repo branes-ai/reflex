@@ -23,6 +23,9 @@ const summary = [
 ].join(', ');
 const hashed = Boolean(report && /^[0-9a-f]{7,40}$/.test(report.commit));
 const date = report && new Date(report.date).toISOString().replace('T', ' ').slice(0, 16);
+const played = report?.published
+  ? `the pages play the ${report.published} run, or the committed trace where that run wrote none or an invalid one`
+  : 'the pages play the committed traces';
 const compilers = report ? Object.entries(report.runs).map(([label, r]: [string, any]) => `${label} (${r.compiler})`) : [];
 ---
 <div class="sg not-content">
@@ -33,8 +36,7 @@ const compilers = report ? Object.entries(report.runs).map(([label, r]: [string,
     <p class="sg-run">
       Run on {date} UTC at commit{' '}
       {hashed ? <a href={`https://github.com/branes-ai/reflex/commit/${report.commit}`}><code>{report.commit}</code></a> : <code>{report.commit}</code>}, with{' '}
-      {compilers.join(' and ')}. Each run is compared with the committed traces; the pages play the{' '}
-      {Object.keys(report.runs)[0]} run.{report.run && <> <a href={report.run}>Workflow run</a>.</>}
+      {compilers.join(' and ')}. Each run is compared with the committed traces; {played}.{report.run && <> <a href={report.run}>Workflow run</a>.</>}
     </p>
   ) : (
     <p class="sg-run">

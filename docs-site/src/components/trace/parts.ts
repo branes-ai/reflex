@@ -14,6 +14,7 @@ export interface TraceParts {
     dt_trace?: number;
   };
   schema: string;
+  t: number[];
   events?: { t: number; label: string }[];
   checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean }[];
 }
@@ -29,10 +30,15 @@ export function fmt(v: number): string {
   return v === 0 || (Math.abs(v) >= 1e-3 && Math.abs(v) < 1e4) ? String(Number(v.toPrecision(4))) : v.toExponential(2);
 }
 
+/** An event time: to 10 ms, or to 1 ms in a trace shorter than a second. */
+export function eventTime(trace: TraceParts, t: number): string {
+  return t.toFixed(trace.t[trace.t.length - 1] < 1 ? 3 : 2);
+}
+
 export function renderEvents(trace: TraceParts): string {
   if (!trace.events?.length) return '';
   const items = trace.events
-    .map((e) => `<li><button type="button" data-seek="${e.t}">t = ${e.t.toFixed(2)} s</button> ${escapeHtml(e.label)}</li>`)
+    .map((e) => `<li><button type="button" data-seek="${e.t}">t = ${eventTime(trace, e.t)} s</button> ${escapeHtml(e.label)}</li>`)
     .join('');
   return `<ol class="tp-events">${items}</ol>`;
 }

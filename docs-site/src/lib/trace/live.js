@@ -37,6 +37,13 @@ export const LIVE = {
       { name: 'feedforward', label: 'Feed-forward', unit: '%', scale: 0.01, min: 0, max: 100, step: 10, default: 1 },
     ],
   },
+  filters_sweep: {
+    trace: 'filters/sweep.json',
+    params: [
+      { name: 'q', label: 'Notch quality factor q', unit: '', scale: 1, min: 2, max: 10, step: 0.5, default: 5 },
+      { name: 'speed_error', label: 'Rotor speed error', unit: '%', scale: 0.01, min: -10, max: 10, step: 1, default: 0 },
+    ],
+  },
   pid_terms: {
     trace: 'pid/terms.json',
     params: [

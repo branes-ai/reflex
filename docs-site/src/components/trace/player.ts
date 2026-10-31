@@ -13,6 +13,7 @@ interface Readout {
   items: { channel: string; component: number }[];
   decimals: number;
   bars?: BarsReadout;
+  spectrogram?: SpectrogramReadout;
 }
 
 type Trace = TraceParts & {
@@ -51,8 +52,8 @@ export interface ViewHandle {
 }
 
 import type { GhostSpec } from './vehicle-view';
-import { barGeometry, renderPanel, type BarsReadout, type PanelSpec } from './plot';
-import { renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
+import { barGeometry, renderPanel, type BarsReadout, type PanelSpec, type SpectrogramReadout } from './plot';
+import { eventTime, renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
 import { runLive } from '../../lib/trace/live.js';
 
 // One WebAssembly module per page, loaded on the first slider move.
@@ -89,7 +90,7 @@ function attach(root: HTMLElement) {
     svg: el.querySelector<SVGSVGElement>('svg')!,
     cursor: el.querySelector<SVGLineElement>('.tp-cursor'),
     values: [...el.querySelectorAll<HTMLElement>('[data-readout]')],
-    text: el.querySelector<HTMLElement>('[data-bars-text]'),
+    text: el.querySelector<HTMLElement>('[data-bars-text], [data-spectrogram-text]'),
     readout: config.panels[i],
   }));
   const parts = {
@@ -133,6 +134,13 @@ function attach(root: HTMLElement) {
       const x = x0 + ((tk - t[0]) / (t[n - 1] - t[0])) * (x1 - x0);
       p.cursor!.setAttribute('x1', String(x));
       p.cursor!.setAttribute('x2', String(x));
+      if (p.readout.spectrogram) {
+        const veil = p.svg.querySelector('.tp-veil');
+        veil?.setAttribute('x', String(x));
+        veil?.setAttribute('width', String(Math.max(0, x1 - x)));
+        if (p.text) p.text.textContent = describeSpectrum(trace, index, p.readout.spectrogram);
+        continue;
+      }
       p.readout.items.forEach(({ channel, component: c }, j) => {
         const entry = trace.channels[channel][index];
         const v = Array.isArray(entry) ? entry[c] : entry;
@@ -142,7 +150,7 @@ function attach(root: HTMLElement) {
     }
     if (eventBox) {
       const passed = (trace.events ?? []).filter((e) => e.t <= tk);
-      eventBox.textContent = passed.length ? `t = ${passed[passed.length - 1].t.toFixed(2)} s: ${passed[passed.length - 1].label}` : '';
+      eventBox.textContent = passed.length ? `t = ${eventTime(trace, passed[passed.length - 1].t)} s: ${passed[passed.length - 1].label}` : '';
     }
     view?.show(index);
   }
@@ -238,6 +246,7 @@ function attach(root: HTMLElement) {
         p.readout = r.readout;
       });
     }
+    paintAll();
     parts.events.innerHTML = renderEvents(trace);
     parts.checks.innerHTML = renderChecks(trace);
     parts.prov.innerHTML = renderProvenance(trace, live);
@@ -311,8 +320,73 @@ function attach(root: HTMLElement) {
 
   if (config.live) attachLive(root, config.live, recorded, load);
 
+  // Spectrograms are painted from the trace, in the theme's ramp, and
+  // repainted when the theme changes.
+  function paintAll() {
+    for (const p of panels) if (p.readout.spectrogram) paintSpectrogram(root, p.svg, trace, p.readout.spectrogram);
+  }
+  if (panels.some((p) => p.readout.spectrogram)) {
+    new MutationObserver(paintAll).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', paintAll);
+    paintAll();
+  }
+
   setRate(1);
   render();
+}
+
+/** Parses #rrggbb. */
+function rgb(hex: string): [number, number, number] {
+  const h = hex.trim().replace('#', '');
+  return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+}
+
+/**
+ * Paints a spectrogram's image: column k is sample k, row 0 the top bin. The
+ * level in dB, 20·log10 of the recorded amplitude, is mapped onto the theme's
+ * sequential ramp (--tp-seq-0 … --tp-seq-5), clamped to the panel's range.
+ */
+function paintSpectrogram(root: HTMLElement, svg: SVGSVGElement, trace: Trace, s: SpectrogramReadout) {
+  const image = svg.querySelector('image[data-spectrogram]');
+  if (!image) return;
+  const style = getComputedStyle(root);
+  const stops = [0, 1, 2, 3, 4, 5].map((i) => rgb(style.getPropertyValue(`--tp-seq-${i}`) || '#000000'));
+  const data = trace.channels[s.channel] as number[][];
+  const n = data.length;
+  const canvas = document.createElement('canvas');
+  canvas.width = n;
+  canvas.height = s.bins;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return;
+  const pixels = ctx.createImageData(n, s.bins);
+  for (let k = 0; k < n; k++) {
+    for (let b = 0; b < s.bins; b++) {
+      const v = data[k][b];
+      const db = v > 0 ? 20 * Math.log10(v) : -Infinity;
+      const u = Math.min(1, Math.max(0, (db - s.lo) / (s.hi - s.lo))) * (stops.length - 1);
+      const i = Math.min(stops.length - 2, Math.floor(u));
+      const f = u - i;
+      const o = ((s.bins - 1 - b) * n + k) * 4;
+      for (let c = 0; c < 3; c++) pixels.data[o + c] = Math.round(stops[i][c] + (stops[i + 1][c] - stops[i][c]) * f);
+      pixels.data[o + 3] = 255;
+    }
+  }
+  ctx.putImageData(pixels, 0, 0);
+  image.setAttribute('href', canvas.toDataURL());
+}
+
+/** The spectrogram at sample k as text: its three strongest peaks. */
+function describeSpectrum(trace: Trace, k: number, s: SpectrogramReadout) {
+  const row = trace.channels[s.channel][k] as number[];
+  const db = row.map((v) => (v > 0 ? 20 * Math.log10(v) : -Infinity));
+  const peaks = db
+    .map((v, b) => ({ b, v }))
+    .filter(({ b, v }) => v > s.lo && (b === 0 || v >= db[b - 1]) && (b === db.length - 1 || v >= db[b + 1]))
+    .sort((a, c) => c.v - a.v)
+    .slice(0, 3)
+    .map(({ b, v }) => `${Math.round(b * s.binHz)} Hz at ${v.toFixed(0)} dB`);
+  const head = `${s.title} at t = ${trace.t[k].toFixed(3)} s`;
+  return peaks.length ? `${head}: strongest ${peaks.join(', ')}.` : `${head}: nothing above ${s.lo} dB.`;
 }
 
 /** Moves a bar panel's bars, outlines, limit lines, and value labels to sample k. */
@@ -375,12 +449,12 @@ function attachLive(root: HTMLElement, live: LiveConfig, recorded: Trace, load: 
   };
   const values = () => sliders.map((s, i) => Number(s.value) * live.params[i].scale);
   const atDefaults = () => sliders.every((s, i) => Number(s.value) === display(live.params[i]));
-  const describe = () =>
-    sliders.map((s, i) => `${live.params[i].label} = ${s.value} ${live.params[i].unit}`).join(', ');
+  const withUnit = (v: string, q: LiveParam) => (q.unit ? `${v} ${q.unit}` : v);
+  const describe = () => sliders.map((s, i) => `${live.params[i].label} = ${withUnit(s.value, live.params[i])}`).join(', ');
 
   async function rerun() {
     pending = false;
-    sliders.forEach((s, i) => (outputs[i].textContent = `${s.value} ${live.params[i].unit}`));
+    sliders.forEach((s, i) => (outputs[i].textContent = withUnit(s.value, live.params[i])));
     if (atDefaults()) {
       load(recorded, false);
       reset.disabled = true;

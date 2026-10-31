@@ -25,6 +25,7 @@
 //   tumble      p0, p1, p2 = J_x, J_y, J_z [kg·m²]
 //   roll_step   p0 = attitude gain K [1/s], p1 = rate gain k_p [1/s]
 //   cascade_waypoint  p0 = peak speed [m/s], p1 = feed-forward fraction [1]
+//   filters_sweep  p0 = notch quality factor q [1], p1 = rotor speed error [1]
 //   pid_terms   p0, p1, p2 = k_p [1/s²], k_i [1/s³], k_d [1/s]
 //   pid_derivative_filter  p0 = derivative_tau [s]
 //   pid_windup  p0 = k_i [1/s], p1 = hold time [s]
@@ -33,6 +34,7 @@
 
 #include "cascade/roll_step.hpp"
 #include "cascade/waypoint.hpp"
+#include "filters/sweep.hpp"
 #include "mixer/clip_vs_priority.hpp"
 #include "mixer/priority.hpp"
 #include "pid/derivative_filter.hpp"
@@ -76,6 +78,9 @@ branes::reflex::trace::Trace dispatch(std::string_view scenario, double p0, doub
     }
     if (scenario == "cascade_waypoint") {
         return sc::cascade_waypoint::run({.speed = p0, .feedforward = p1});
+    }
+    if (scenario == "filters_sweep") {
+        return sc::filters_sweep::run({.q = p0, .speed_error = p1});
     }
     if (scenario == "pid_terms") {
         return sc::pid_terms::run({.kp = p0, .ki = p1, .kd = p2});

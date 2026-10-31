@@ -1,14 +1,25 @@
 ---
 title: Gyro Filters
-description: branes::reflex::dsp — biquad low-pass and notch sections, and RPM-tracked notches at the rotor harmonics.
+description: Developer guide for branes::reflex::dsp, the gyro filters. Covers the biquad section and its designs, RPM-tracked notches at the rotor harmonics, fault handling, the contracts, and the API.
+sidebar:
+  label: "Developer Guide"
+  group: "Gyro Filters"
 ---
 
 `#include <branes/reflex/dsp/biquad.hpp>`
 `#include <branes/reflex/dsp/rpm_notch.hpp>`
 
-**Grade: C** (specified and unit-tested) under the
-[building block standard](../standards/building-blocks.md). See
-[what the evidence shows](#what-the-evidence-shows).
+**Grade: C**, under the
+[building block standard](../standards/building-blocks.md). The
+[V&V plan](filters-vv.mdx) has the assessment, the acceptance criteria,
+and the path to A.
+
+This is the developer guide: the designs, the RPM notches, faults, the
+contracts, and the API. The [explainer](filters-explainer.mdx) shows the
+filters at work, with spectrograms of a throttle sweep and a widget that
+runs them in your browser. The [deployment guide](filters-deployment.mdx)
+covers the gyro rate, the telemetry, choosing the settings, and wiring
+the chain into a flight stack.
 
 The rate loop runs on the gyro, and the gyro sees motor and propeller
 vibration as well as the vehicle's motion. These filters remove the
@@ -106,7 +117,9 @@ A notch whose harmonic lies above $0.45 f_s$ is parked there with weight 0.
 Each notch's output is blended as $y \leftarrow y + w\,(N(y) - y)$, and every
 section keeps updating at $w = 0$, so its history is live when it fades back
 in. At $w = 0$ the blend is skipped and the stage passes its input through
-exactly. `rpm_notch_config_valid` checks a configuration.
+exactly. `rpm_notch_config_valid` checks a configuration. The
+[explainer](filters-explainer.mdx#3-staying-out-of-the-control-band)
+shows the floor and the fade during a throttle sweep.
 
 ## Contracts
 
@@ -120,35 +133,29 @@ exactly. `rpm_notch_config_valid` checks a configuration.
 DC does not survive coefficient rounding in them. The depth they reach is
 printed by the `16-bit types` test case for reference.
 
-## What the evidence shows
+## API
 
-A filter's correctness is a property of its transfer function, so these
-tests are verification against analytic answers, and they need no physical
-reference. The open question is whether the vibration actually sits at the
-rotor harmonics. Spectral tests on RP-1 flight logs answer it (the
-[control guide's](../control/quadrotor-control.md) F3).
-
-The acceptance criteria were written into
-[reflex#21](https://github.com/branes-ai/reflex/issues/21) before the tests
-ran. Each tolerance is derived from a bound (the impulse response's tail for
-the start-up transient, and a per-step rounding bound carried through
-$1/A(z)$), never tuned to pass.
-
-| Criterion | Pass if |
+| Member | Contract |
 |---|---|
-| Butterworth and first-order designs | DC gain 1 and $1/\sqrt{2}$ at $f_c$ to 1e-12; Butterworth magnitude monotone |
-| Measured tone gains, 20 frequencies | Match `response()` within the derived bound |
-| Notch | Analytic gain at $f_0$ ≤ 1e-12; a tone at $f_0$ attenuated ≥ 60 dB (double), ≥ 40 dB (float); −3 dB edges where the closed form puts them |
-| Group delay | Measured from tone phases, matches `group_delay()` to 50 µs |
-| Delay budget | Rate-loop phase margin ≥ 45° on the nominal vehicle with a Butterworth at 16× crossover and hover-speed RPM notches in the loop |
-| RPM tracking | Four rotors spread ±5 %, ramped to 1.5× hover in 1 s: vibration residual ≤ −30 dB, 5 Hz motion within 2 % |
-| Fast retuning | Full-range speed swings within one motor time constant keep the output within the series ℓ1 gain bound |
-| Code-to-code | Designs and outputs match [stillwater-sc/mp-dsp](https://github.com/stillwater-sc/mp-dsp), an independent implementation, within the derived bounds |
+| `BiquadCoefficients<T>` | b0, b1, b2, a1, a2 of H(z); the default is the pass-through section |
+| `biquad_coefficients_valid(c)` | Finite, and the poles strictly inside the unit circle (I1) |
+| `design_frequency_valid(f, fs)` | 0 < f < fs/2, both finite |
+| `butterworth_lowpass(fc, fs)`, `first_order_lowpass(fc, fs)`, `notch(f0, q, fs)` | Pre: a valid design frequency (and q > 0). Post: a valid section meeting its design. On a violation: asserts, and returns the pass-through section in release |
+| `dc_gain(c)`, `response(c, f, fs)`, `group_delay(c, f, fs)` | The gain at DC; the complex gain at f; the group delay in seconds, from the closed form. The last two evaluate in double |
+| `Biquad(c, x0 = 0)` | Pre: c valid, x0 finite. Post: the steady state for a constant input x0 |
+| `update(x)` | One sample. A non-finite input or an overflow returns the last output and keeps the state |
+| `set_coefficients(c)` | New coefficients, same history. Pre: c valid; ignored in release otherwise |
+| `reset(x0 = 0)`, `coefficients()`, `output()` | Restart at a steady state; the section; the last output |
+| `RpmNotchConfig<T>`, `rpm_notch_config_valid<T, H>(c)` | The configuration and its validator (I1) |
+| `RpmNotch<T, Rotors = 4, MaxHarmonics = 3>(cfg)` | Pre: cfg valid. Post: every notch at min_hz with weight 0, so the input passes through |
+| `update_rotor_speeds(ω)` | Rotor speeds in rad/s. Post: each notch placed, faded, or parked; a non-finite or negative speed holds that rotor's notches |
+| `apply(x)` | One 3-axis sample through every notch in series. Post: a finite output; a faulted axis returns its last output |
+| `reset()`, `config()`, `center_hz(r, h)`, `weight(r, h)`, `section(r, h, i)` | Clear the history, keep the notches; inspection |
 
-mp-dsp is a test-only dependency. Its designs throw on invalid input and do
-not build with `-fno-exceptions`
-([mp-dsp#217](https://github.com/stillwater-sc/mp-dsp/issues/217)), so the
-flight path keeps reflex's own.
+`Biquad` holds two invariants: valid coefficients (I1) and a finite history
+(I2). `RpmNotch` holds four: a valid configuration (I1), every centre in
+[min_hz, 0.45·fs] (I2), every weight in [0, 1] (I3), and a finite last
+output (I4). Debug builds assert them after every operation.
 
 ## Not covered
 
@@ -158,8 +165,5 @@ flight path keeps reflex's own.
 - Anti-alias filtering and the IMU sample rate; harmonics above $f_s/2$ alias
   and are not tracked.
 
-## Cost
-
-`bench/filter_bench` reports nanoseconds per `Biquad::update`, per 3-axis
-`RpmNotch::apply`, and per `update_rotor_speeds`, in `float` and `double`, on
-the host. These are latency characterization figures, not a timing bound.
+The [deployment guide](filters-deployment.mdx) covers choosing the gyro
+rate and the settings, and the cost per call.

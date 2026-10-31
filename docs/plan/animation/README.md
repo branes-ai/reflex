@@ -37,7 +37,7 @@ continues to P2. P2 is built: three live widgets, two on the
 moments of inertia) and one now on the
 [cascade explainer](../../control/cascade-explainer.mdx#2-the-inner-loops-a-roll-step)
 (attitude and rate gains), run their scenarios' C++ in the browser. CI
-checks each against its native trace. P3 is under way, one block per PR.
+checks each against its native trace. P3 was built one block per PR.
 The PID controller has its four pages: the
 [explainer](../../control/pid-explainer.mdx) with three live widgets (the gains,
 the derivative filter, and windup), the [developer guide](../../control/pid.mdx),
@@ -56,7 +56,16 @@ four too: the [explainer](../../control/cascade-explainer.mdx) with two live wid
 and the [deployment guide](../../control/cascade-deployment.mdx), from five
 scenarios in `tools/trace/scenarios/cascade/`. Each loop's setpoint is
 shown, and on the square the position loop's setpoint and attitude target
-fly as a ghost vehicle. The filters follow.
+fly as a ghost vehicle. The gyro filters have their four too, which
+completes P3: the [explainer](../../dsp/filters-explainer.mdx) with a live
+widget (the notches' quality factor and the rotor speed error, through a
+throttle sweep), the [developer guide](../../dsp/filters.md), the
+[V&V plan](../../dsp/filters-vv.mdx), and the
+[deployment guide](../../dsp/filters-deployment.mdx), from four scenarios in
+`tools/trace/scenarios/filters/`. The player gained a spectrogram panel for
+them: the scenario's C++ computes each spectrum, and the player paints it,
+filling in as the trace plays, with the notch centres drawn over it. P4
+follows.
 
 ## Order
 

@@ -46,7 +46,28 @@ export interface BarsSpec {
   limits?: { channel: string; label: string };
 }
 
-export type PanelSpec = PlotSpec | BarsSpec;
+/**
+ * A spectrogram: a vector channel of spectrum amplitudes, one column per
+ * sample and one row per frequency bin, coloured by level in dB. The trace
+ * records linear amplitudes, computed by the scenario's C++; the client only
+ * paints them (ANI-1). The cursor dims the columns after it, so the
+ * spectrogram fills in as the trace plays.
+ */
+export interface SpectrogramSpec {
+  kind: 'spectrogram';
+  /** Vector channel: the amplitude in each bin, bin b at b·binHz. */
+  channel: string;
+  /** Scalar channel: the bin spacing [Hz]. */
+  binHz: string;
+  /** Panel title. */
+  title: string;
+  /** Colour range in dB relative to 1 unit of the channel (default [-60, 0]). */
+  range?: [number, number];
+  /** Lines over the image, in Hz: one per component of `channel`, drawn only where `weights` (same width) is above 0. */
+  overlay?: { channel: string; weights?: string; label: string };
+}
+
+export type PanelSpec = PlotSpec | BarsSpec | SpectrogramSpec;
 
 export interface SeriesSpec {
   channel: string;
@@ -91,6 +112,11 @@ function ticks(lo: number, hi: number, target: number) {
   return { step, values: out };
 }
 
+
+/** Text anchor for a time tick at x: the last one ends at the plot's edge, so its label is not clipped. */
+function anchor(x: number): string {
+  return x > X1 - 12 ? 'end' : 'middle';
+}
 
 function component(entry: number | number[], i: number): number {
   return Array.isArray(entry) ? entry[i] : entry;
@@ -161,7 +187,7 @@ export function renderPlot(trace: Trace, spec: PlotSpec, key = '') {
       `<text class="tick" x="${X0 - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v.toFixed(yd)}</text>`)
     .join('');
   const xticks = xt.values
-    .map((v) => `<text class="tick" x="${x(v).toFixed(1)}" y="${BOTTOM + 15}" text-anchor="middle">${v.toFixed(decimals(xt.step))}</text>`)
+    .map((v) => `<text class="tick" x="${x(v).toFixed(1)}" y="${BOTTOM + 15}" text-anchor="${anchor(x(v))}">${v.toFixed(decimals(xt.step))}</text>`)
     .join('');
   const events = (trace.events ?? [])
     .map((e) => `<line class="event" x1="${x(e.t).toFixed(1)}" x2="${x(e.t).toFixed(1)}" y1="${TOP}" y2="${BOTTOM}"/>`)
@@ -331,7 +357,120 @@ function renderBars(trace: Trace, spec: BarsSpec) {
   };
 }
 
-/** Renders a panel of either kind: a time plot, or bars at the cursor. */
+const SPEC_H = 176;
+const SPEC_TOP = 12;
+const SPEC_BOTTOM = SPEC_H - 24;
+
+/** What the client needs to paint a spectrogram and move its cursor. */
+export interface SpectrogramReadout {
+  channel: string;
+  /** Bins shown: 0 … bins − 1. */
+  bins: number;
+  binHz: number;
+  lo: number;
+  hi: number;
+  unit: string;
+  title: string;
+  /** The image's extent in SVG units: columns end at each sample's time, rows centre on each bin. */
+  image: { x: number; y: number; width: number; height: number };
+}
+
+function renderSpectrogram(trace: Trace, spec: SpectrogramSpec, key: string) {
+  const { t } = trace;
+  const data = trace.channels[spec.channel] as number[][] | undefined;
+  if (!data) throw new Error(`TracePlayer: no channel "${spec.channel}" in the trace`);
+  if (!Array.isArray(data[0]) || data[0].length < 2) throw new Error(`TracePlayer: spectrogram channel "${spec.channel}" must be a vector`);
+  const binChannel = trace.channels[spec.binHz];
+  if (!binChannel || Array.isArray(binChannel[0])) throw new Error(`TracePlayer: no scalar channel "${spec.binHz}" for the bin spacing`);
+  const binHz = binChannel[0] as number;
+  if (!(binHz > 0) || binChannel.some((v) => v !== binHz)) throw new Error(`TracePlayer: "${spec.binHz}" must be one positive value`);
+  if ((channelUnit(trace, spec.binHz) ?? '') !== 'Hz') throw new Error(`TracePlayer: "${spec.binHz}" must be in Hz`);
+  const [lo, hi] = spec.range ?? [-60, 0];
+  if (!(hi > lo)) throw new Error(`TracePlayer: spectrogram "${spec.title}" has an empty range`);
+  const bins = data[0].length;
+  const unit = channelUnit(trace, spec.channel) ?? '';
+
+  const t0 = t[0];
+  const t1 = t[t.length - 1];
+  const dt = t.length > 1 ? t[1] - t[0] : 1;
+  const fTop = (bins - 0.5) * binHz;
+  const x = (v: number) => X0 + ((v - t0) / (t1 - t0)) * (X1 - X0);
+  const y = (f: number) => SPEC_BOTTOM - (f / fTop) * (SPEC_BOTTOM - SPEC_TOP);
+  const xt = ticks(t0, t1, 6);
+  const ft = ticks(0, fTop, 4);
+  const fd = decimals(ft.step);
+  const grid = ft.values
+    .filter((v) => v <= fTop)
+    .map((v) => `<text class="tick" x="${X0 - 6}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${v.toFixed(fd)}</text>`)
+    .join('');
+  const xticks = xt.values
+    .map((v) => `<text class="tick" x="${x(v).toFixed(1)}" y="${SPEC_BOTTOM + 15}" text-anchor="${anchor(x(v))}">${v.toFixed(decimals(xt.step))}</text>`)
+    .join('');
+
+  // Overlay lines, broken where the weight is 0 (a notch that is off).
+  let lines = '';
+  if (spec.overlay) {
+    const centres = trace.channels[spec.overlay.channel];
+    if (!centres) throw new Error(`TracePlayer: no channel "${spec.overlay.channel}" in the trace`);
+    if ((channelUnit(trace, spec.overlay.channel) ?? '') !== 'Hz') throw new Error(`TracePlayer: overlay "${spec.overlay.channel}" must be in Hz`);
+    const weights = spec.overlay.weights ? trace.channels[spec.overlay.weights] : undefined;
+    if (spec.overlay.weights && !weights) throw new Error(`TracePlayer: no channel "${spec.overlay.weights}" in the trace`);
+    const width = Array.isArray(centres[0]) ? (centres[0] as number[]).length : 1;
+    for (let c = 0; c < width; c++) {
+      let run: string[] = [];
+      const flush = () => {
+        if (run.length > 1) lines += `<polyline class="line thin s-2" points="${run.join(' ')}"/>`;
+        run = [];
+      };
+      centres.forEach((entry, k) => {
+        const on = !weights || component(weights[k], c) > 0;
+        if (!on) return flush();
+        run.push(`${x(t[k]).toFixed(1)},${y(component(entry, c)).toFixed(1)}`);
+      });
+      flush();
+    }
+  }
+
+  const image = { x: x(t0 - dt), y: SPEC_TOP, width: x(t1) - x(t0 - dt), height: SPEC_BOTTOM - SPEC_TOP };
+  const fmt = (v: number) => Number(v.toPrecision(3));
+  const unitLabel = unit && unit !== '1' ? ` ${unit}` : '';
+  const svg = `<svg class="tp-plot tp-spectrogram" viewBox="0 0 ${W} ${SPEC_H}" aria-hidden="true" data-x0="${X0}" data-x1="${X1}">` +
+    `<rect class="surface" x="0.5" y="0.5" width="${W - 1}" height="${SPEC_H - 1}" rx="6"/>` +
+    `<clipPath id="tp-clip-${key}"><rect x="${X0}" y="${SPEC_TOP}" width="${X1 - X0}" height="${SPEC_BOTTOM - SPEC_TOP}"/></clipPath>` +
+    `<g clip-path="url(#tp-clip-${key})">` +
+    `<rect class="tp-floor" x="${X0}" y="${SPEC_TOP}" width="${X1 - X0}" height="${SPEC_BOTTOM - SPEC_TOP}"/>` +
+    `<image data-spectrogram x="${image.x.toFixed(2)}" y="${image.y}" width="${image.width.toFixed(2)}" height="${image.height}" preserveAspectRatio="none"/>` +
+    lines +
+    `<rect class="tp-veil" x="${X0}" y="${SPEC_TOP}" width="${X1 - X0}" height="${SPEC_BOTTOM - SPEC_TOP}"/>` +
+    `</g>` +
+    `<line class="axis" x1="${X0}" x2="${X1}" y1="${SPEC_BOTTOM}" y2="${SPEC_BOTTOM}"/>` + grid + xticks +
+    `<text class="tick" x="6" y="${SPEC_BOTTOM + 15}">t [s]</text>` +
+    `<text class="tick" x="6" y="${SPEC_TOP + 10}">Hz</text>` +
+    `<line class="tp-cursor" x1="${X0}" x2="${X0}" y1="${SPEC_TOP - 2}" y2="${SPEC_BOTTOM}"/>` +
+    `</svg>`;
+  const readout: SpectrogramReadout = {
+    channel: spec.channel,
+    bins,
+    binHz,
+    lo,
+    hi,
+    unit: unit === '1' ? '' : unit,
+    title: spec.title,
+    image,
+  };
+  return {
+    title: spec.title,
+    svg,
+    dashed: false,
+    legend: spec.overlay ? [{ label: spec.overlay.label, color: 2, dashed: false }] : [],
+    scale: { lo: `${fmt(lo)} dB`, hi: `${fmt(hi)} dB`, unit: `level, dB re 1${unitLabel}` },
+    readout: { items: [] as { channel: string; component: number }[], decimals: 0, spectrogram: readout },
+  };
+}
+
+/** Renders a panel of any kind: a time plot, bars at the cursor, or a spectrogram. */
 export function renderPanel(trace: Trace, spec: PanelSpec, key = '') {
-  return 'kind' in spec && spec.kind === 'bars' ? renderBars(trace, spec) : renderPlot(trace, spec as PlotSpec, key);
+  if ('kind' in spec && spec.kind === 'bars') return renderBars(trace, spec);
+  if ('kind' in spec && spec.kind === 'spectrogram') return renderSpectrogram(trace, spec, key);
+  return renderPlot(trace, spec as PlotSpec, key);
 }

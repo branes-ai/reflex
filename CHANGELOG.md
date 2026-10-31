@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.3](https://github.com/branes-ai/reflex/compare/v0.7.2...v0.7.3) (2026-10-31)
+
+
+### Documentation
+
+* **dsp:** gyro filter pages and spectrograms (animation plan p3, part 4) ([#57](https://github.com/branes-ai/reflex/issues/57)) ([05f905f](https://github.com/branes-ai/reflex/commit/05f905fcd06c89fbbf6ac0302679da80da6f006b))
+
 ## [0.7.2](https://github.com/branes-ai/reflex/compare/v0.7.1...v0.7.2) (2026-10-31)
 
 

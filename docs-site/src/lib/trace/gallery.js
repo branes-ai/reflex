@@ -120,7 +120,8 @@ export function derivePlots(trace) {
   for (const [name, data] of Object.entries(ch)) {
     if (fixed.has(name) || /(^|_)attitude$/.test(name)) continue;
     const base = name.replace(/_setpoint$/, '');
-    if (base !== name && ch[base] && widthOf(ch[base]) === widthOf(data)) continue;  // drawn on its base's panel
+    // Drawn dashed on its base's panel, when the base has one.
+    if (base !== name && ch[base] && !fixed.has(base) && widthOf(ch[base]) === widthOf(data)) continue;
     if (name.endsWith('_spectrum') && binHz) {
       panels.push({ kind: 'spectrogram', channel: name, binHz, title: name });
       continue;

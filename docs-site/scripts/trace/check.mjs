@@ -81,7 +81,14 @@ for (const rel of committed) {
     outcome[rel] = 'missing';
     continue;
   }
-  const regen = JSON.parse(readFileSync(regenPath, 'utf8'));
+  let regen;
+  try {
+    regen = JSON.parse(readFileSync(regenPath, 'utf8'));
+  } catch (e) {
+    fail(`${rel}: regenerated trace is not JSON: ${e.message}`);
+    outcome[rel] = 'invalid';
+    continue;
+  }
   const regenErrors = validateTrace(regen);
   if (regenErrors.length) {
     fail(`${rel}: regenerated trace is invalid`);

@@ -108,12 +108,12 @@ function attach(root: HTMLElement) {
     }
     return lo;
   };
-  // An event within this of a sample time is at that sample.
-  const eventTolerance = 1e-9 * (t[n - 1] - t[0]);
+  // An event within this of a sample time is at that sample; load() changes t.
+  const eventTolerance = () => 1e-9 * (t[n - 1] - t[0]);
   // An event's sample: the first at or after it, so the overlay names it.
   const eventIndex = (time: number) => {
     const k = indexAt(time);
-    return k < n - 1 && t[k] < time - eventTolerance ? k + 1 : k;
+    return k < n - 1 && t[k] < time - eventTolerance() ? k + 1 : k;
   };
 
   function render() {
@@ -147,7 +147,7 @@ function attach(root: HTMLElement) {
       });
     }
     if (eventBox) {
-      const passed = (trace.events ?? []).filter((e) => e.t <= tk + eventTolerance);
+      const passed = (trace.events ?? []).filter((e) => e.t <= tk + eventTolerance());
       eventBox.textContent = passed.length ? `t = ${eventTime(trace, passed[passed.length - 1].t)} s: ${passed[passed.length - 1].label}` : '';
     }
     view?.show(index);

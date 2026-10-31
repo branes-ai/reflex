@@ -103,7 +103,8 @@
           "value": { "type": "number" },
           "limit": { "type": "number" },
           "comparison": { "enum": ["<=", ">="] },
-          "pass": { "type": "boolean" }
+          "pass": { "type": "boolean" },
+          "expect": { "enum": ["pass", "fail"] }
         }
       }
     }

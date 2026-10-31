@@ -96,6 +96,21 @@ TEST_CASE("trace writer: events and checks enforce W5 and W6", "[trace]") {
                       std::invalid_argument);
     tr.event(0.5, "late");
     REQUIRE_THROWS_AS(tr.to_json(), std::invalid_argument);
+    REQUIRE_THROWS_AS(tr.expect_failure("BB-V3"), std::invalid_argument);  // no such check
+}
+
+TEST_CASE("trace writer: an expected failure is serialized", "[trace]") {
+    Trace tr(provenance());
+    tr.channel("position", 3);
+    tr.sample(0);
+    tr.set("position", {0, 0, 1});
+    tr.check({.id = "BB-I2", .metric = "m", .unit = "1", .value = 3, .limit = 2, .comparison = "<="});
+    tr.check({.id = "BB-C2", .metric = "n", .unit = "1", .value = 1, .limit = 2, .comparison = "<="});
+    REQUIRE_FALSE(contains(tr.to_json(), "\"expect\""));
+    tr.expect_failure("BB-I2");
+    const std::string json = tr.to_json();
+    REQUIRE(contains(json, "\"pass\": false, \"expect\": \"fail\" }"));
+    REQUIRE(contains(json, "\"pass\": true }"));
 }
 
 TEST_CASE("trace writer: serialized form", "[trace]") {

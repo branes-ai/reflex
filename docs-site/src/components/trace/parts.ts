@@ -3,6 +3,8 @@
 // component and again in the browser when a live widget replaces the trace,
 // so both paths produce the same markup.
 
+import { checkStatus, STATUS_LABEL } from '../../lib/trace/status.js';
+
 export interface TraceParts {
   provenance: {
     commit: string;
@@ -16,7 +18,7 @@ export interface TraceParts {
   schema: string;
   t: number[];
   events?: { t: number; label: string }[];
-  checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean }[];
+  checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean; expect?: string }[];
 }
 
 const REPO = 'https://github.com/branes-ai/reflex';
@@ -46,12 +48,25 @@ export function renderEvents(trace: TraceParts): string {
 export function renderChecks(trace: TraceParts): string {
   if (!trace.checks?.length) return '';
   const items = trace.checks
-    .map((c) =>
-      `<li class="${c.pass ? 'pass' : 'fail'}"><span class="tp-badge">${c.pass ? '✓ pass' : '✗ fail'}</span>` +
+    .map((c) => {
+      const status = checkStatus(c);
+      return `<li class="${status}"><span class="tp-badge">${c.pass ? '✓' : '✗'} ${STATUS_LABEL[status]}</span>` +
       `<b>${escapeHtml(c.id)}</b> ${escapeHtml(c.metric)} = ${fmt(c.value)}${c.unit !== '1' ? ` ${escapeHtml(c.unit)}` : ''} ` +
-      `(${escapeHtml(c.comparison)} ${fmt(c.limit)}), computed by the scenario harness</li>`)
+      `(${escapeHtml(c.comparison)} ${fmt(c.limit)}), computed by the scenario harness</li>`;
+    })
     .join('');
   return `<ul class="tp-checks">${items}</ul>`;
+}
+
+/**
+ * The player's element id, unique on a page even when several players show
+ * one trace: the title, which differs between players, is hashed into it
+ * (FNV-1a, 32 bits). The scenario gallery links to players by it.
+ */
+export function playerId(provenance: { block: string; scenario: string }, title: string): string {
+  let hash = 0x811c9dc5;
+  for (const c of title) hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
+  return `tp-${provenance.block.replace(/\W+/g, '-')}-${provenance.scenario.split('/').pop()?.replace(/\W+/g, '-')}-${hash.toString(36)}`;
 }
 
 /** The footer's contents. `live` marks a trace computed in the reader's browser. */

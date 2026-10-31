@@ -1,0 +1,77 @@
+---
+// One page per scenario of the gallery (animation plan P4), generated from
+// the traces under src/traces/: the player with a panel for every channel
+// that changes, the scenario's status, and the doc pages that explain it.
+// The index is docs/scenarios/gallery.mdx.
+import StarlightPage from '@astrojs/starlight/components/StarlightPage.astro';
+import TracePlayer from '../../../components/trace/TracePlayer.astro';
+import ScenarioStatus from '../../../components/trace/ScenarioStatus.astro';
+import { fmt } from '../../../components/trace/parts';
+import { scenarios, report, blockLabel, derivePlots, describe, constants } from '../../../lib/trace/gallery.js';
+import { channelUnit } from '../../../lib/trace/channels.js';
+
+export function getStaticPaths() {
+  return scenarios().map((s) => ({ params: { block: s.dir, name: s.name }, props: { s } }));
+}
+
+const { s } = Astro.props;
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+const p = s.trace.provenance;
+const plots = derivePlots(s.trace);
+const fixed = constants(s.trace);
+const show = (v: number | number[]) => (Array.isArray(v) ? `[${v.map(fmt).join(', ')}]` : fmt(v));
+const OUTCOME: Record<string, string> = {
+  match: 'matches the committed trace',
+  stale: 'differs from the committed trace',
+  missing: 'did not run',
+  invalid: 'wrote an invalid trace',
+  extra: 'wrote a trace that is not committed',
+};
+---
+<StarlightPage
+  frontmatter={{
+    title: `${s.dir}/${s.name}`,
+    description: `The ${blockLabel(s.dir)} scenario ${s.name}: every channel of its trace, its checks, and the pages that explain it.`,
+    editUrl: false,
+  }}
+>
+  <p>
+    A scenario of the <a href={`${base}scenarios/gallery/#block-${s.dir}`}>{blockLabel(s.dir)}</a>, from{' '}
+    <a href={`https://github.com/branes-ai/reflex/blob/main/${p.scenario}`}><code>{p.scenario}</code></a>.
+  </p>
+  <p class="sg-page-status"><ScenarioStatus status={s.status} runs={s.runs} /></p>
+  {report ? (
+    <ul>
+      {s.runs.map((r) => <li>The {r.label} run ({r.compiler}) {OUTCOME[r.outcome] ?? r.outcome}.</li>)}
+    </ul>
+  ) : (
+    <p>This build plays the committed trace; CI checks it against a fresh run with gcc and clang.</p>
+  )}
+
+  {s.shownOn.length > 0 && (
+    <>
+      <h2 id="shown-on">Shown on</h2>
+      <p>These players show the same trace, with panels chosen to explain it:</p>
+      <ul>
+        {s.shownOn.map((u) => <li><a href={`${base}${u.href}#${u.anchor}`}>{u.title}</a> ({u.page})</li>)}
+      </ul>
+    </>
+  )}
+
+  <h2 id="every-channel">Every channel</h2>
+  <TracePlayer trace={s.trace} title={`${s.dir}/${s.name}: every channel`} description={describe(s.trace, plots)} plots={plots} />
+
+  {fixed.length > 0 && (
+    <>
+      <h3 id="constants">Constant over the run</h3>
+      <ul>
+        {fixed.map((c) => {
+          const unit = channelUnit(s.trace, c.name);
+          return <li><code>{c.name}</code> = {show(c.value)}{unit && unit !== '1' ? ` ${unit}` : ''}</li>;
+        })}
+      </ul>
+    </>
+  )}
+
+  <p><a href={`${base}scenarios/gallery/`}>All scenarios</a></p>
+</StarlightPage>

@@ -3,14 +3,19 @@ name: Deploy Documentation
 # Builds the Starlight docs site (generated from docs/ by docs-kit, at the
 # version docs-site/package.json pins), the Doxygen C++ API reference, and the
 # WebAssembly module of the live widgets, and publishes them to GitHub Pages
-# at https://branes-ai.github.io/reflex/. Unlike the other repos, it doesn't
+# at https://branes-ai.github.io/reflex/. It also runs the scenario suite with
+# gcc and clang, compares the traces with the committed ones, and publishes
+# the site from the gcc run, so the scenario gallery (docs/scenarios/) shows
+# a fresh run: on every deploy, and nightly. A failing scenario is published,
+# so that the gallery shows it, and then fails the workflow. Unlike the other repos, it doesn't
 # call docs-kit's shared deploy workflow: that workflow's build job can't add
 # the Emscripten toolchain the module needs.
 #
 # One-time setup (repo admin, cannot be automated here): Settings → Pages →
 # Build and deployment → Source = "GitHub Actions". After that, every push
 # to main touching docs/, docs-site/, the public headers (API reference), the
-# scenarios and tools behind the widgets, or this workflow redeploys.
+# scenarios and tools behind the widgets, or this workflow redeploys, and so
+# does the nightly schedule.
 
 on:
   push:
@@ -22,7 +27,10 @@ on:
       - 'tools/**'
       - 'scripts/build-wasm.sh'
       - 'scripts/emsdk-version'
+      - 'scripts/gen-traces.sh'
       - '.github/workflows/deploy-docs.yml'
+  schedule:
+    - cron: '17 3 * * *'  # nightly, 03:17 UTC
   workflow_dispatch:
 
 # Least privilege globally; the deploy job opts into the Pages write scopes.
@@ -35,8 +43,10 @@ concurrency:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
+    runs-on: ubuntu-24.04  # the compilers of ci.yml's Docs traces job
+    timeout-minutes: 30
+    outputs:
+      suite-failed: ${{ steps.suite.outputs.failed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -90,6 +100,28 @@ jobs:
           source "$RUNNER_TEMP/emsdk/emsdk_env.sh"
           scripts/build-wasm.sh
 
+      - name: Run the scenario suite (gcc and clang)
+        # Each compiler's traces are compared with the committed ones, and the
+        # outcome goes to src/run/report.json, which the gallery shows. The
+        # site plays the gcc run's valid traces (--publish), and the committed
+        # trace where that run wrote none or an invalid one. A failure is
+        # recorded here, not fatal, so that it is published; the verdict job
+        # fails the workflow after.
+        id: suite
+        run: |
+          failed=0
+          # clang first: gcc's --publish replaces src/traces, which the
+          # other run is compared against.
+          for cc in clang gcc; do
+            cmake --preset "$cc-release" -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF
+            scripts/gen-traces.sh "$cc-release" "build/traces-$cc" || failed=1
+            publish=()
+            [ "$cc" = gcc ] && publish=(--publish src/traces)
+            (cd docs-site && node scripts/trace/check.mjs --regen "../build/traces-$cc" \
+               --report src/run/report.json --label "$cc" "${publish[@]}") || failed=1
+          done
+          echo "failed=$failed" >> "$GITHUB_OUTPUT"
+
       - name: Build site (docs-kit)
         working-directory: docs-site
         run: npm run build
@@ -116,3 +148,16 @@ jobs:
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v5
+
+  verdict:
+    # After the deploy, so that a failing scenario is on the site first.
+    needs: [build, deploy]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail on a failing scenario
+        if: needs.build.outputs.suite-failed != '0'
+        run: |
+          echo "::error::A scenario failed, or differs from its committed trace: see the build job's scenario suite step, and the scenario gallery."
+          exit 1

@@ -65,7 +65,14 @@ throttle sweep), the [developer guide](../../dsp/filters.md), the
 `tools/trace/scenarios/filters/`. The player gained a spectrogram panel for
 them: the scenario's C++ computes each spectrum, and the player paints it,
 filling in as the trace plays, with the notch centres drawn over it. P4
-follows.
+is built: the [scenario gallery](../../scenarios/gallery.mdx) lists every
+scenario by block, with its checks, its status, and the players that
+explain it, and gives each scenario a generated page that plots every
+channel. The deploy workflow runs the suite with gcc and clang on every
+deploy and nightly, publishes the site from that run, and fails after
+publishing when a scenario fails. A check can be marked `"expect": "fail"`
+for a scenario that shows the edge of the envelope (`filters/low_rate`),
+and CI fails any other failing check. P5 follows.
 
 ## Order
 

@@ -14,7 +14,7 @@
 import { validateTrace } from '../../lib/trace/validate.js';
 import { LIVE } from '../../lib/trace/live.js';
 import { renderPanel, type PanelSpec } from './plot';
-import { renderChecks, renderEvents, renderProvenance } from './parts';
+import { playerId, renderChecks, renderEvents, renderProvenance } from './parts';
 import type { GhostSpec } from './vehicle-view';
 
 interface Props {
@@ -45,11 +45,7 @@ if (errors.length) {
 }
 const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
 const p = trace.provenance;
-// Unique on the page even when several players show one trace: the title,
-// which differs between players, is hashed into the id (FNV-1a, 32 bits).
-let hash = 0x811c9dc5;
-for (const c of title) hash = Math.imul(hash ^ c.codePointAt(0)!, 0x01000193) >>> 0;
-const id = `tp-${p.block.replace(/\W+/g, '-')}-${p.scenario.split('/').pop()?.replace(/\W+/g, '-')}-${hash.toString(36)}`;
+const id = playerId(p, title);
 const panels = plots.map((spec, i) => renderPanel(trace, spec, `${id}-${i}`));
 if (ghost) {
   // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
@@ -239,7 +235,7 @@ const config = {
   .trace-player:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 2px; }
   .trace-player :is(p, ol, ul, footer, div) { margin-top: 0; }
   .trace-player .tp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; }
-  .trace-player .tp-title { font-weight: 600; font-size: var(--sl-text-base); color: var(--tp-ink); }
+  .trace-player .tp-title { min-width: 0; overflow-wrap: anywhere; font-weight: 600; font-size: var(--sl-text-base); color: var(--tp-ink); }
   .trace-player .tp-rate { color: var(--tp-ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
   /* Starlight's content column is narrow, so the view sits above the plots;
      side by side only when the player itself is wide. */
@@ -317,7 +313,8 @@ const config = {
   .trace-player .tp-checks b { color: var(--tp-ink); }
   .trace-player .tp-badge { font-weight: 600; margin-right: 0.35rem; }
   .trace-player .tp-checks .pass .tp-badge { color: var(--tp-good); }
-  .trace-player .tp-checks .fail .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-checks .fail .tp-badge, .trace-player .tp-checks .unexpected .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-checks .designed .tp-badge { color: var(--tp-ink); }
   .trace-player .tp-live { border: 1px solid var(--tp-border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
   .trace-player .tp-prompt { color: var(--tp-ink); margin-bottom: 0.5rem; }
   .trace-player .tp-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.4rem 1rem; }

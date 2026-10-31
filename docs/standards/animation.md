@@ -186,7 +186,12 @@ page documents the tooling.
 - **`checks`** have `id` (a requirement ID), `metric`, `unit`, `value`,
   `limit`, `comparison` (`<=` or `>=`), and `pass`. `pass` is computed by
   the harness and never by the player. Check `id`s are unique within a
-  trace, because the equivalence profiles match checks by `id`.
+  trace, because the equivalence profiles match checks by `id`. A check may
+  add `"expect": "fail"` (the default is `"pass"`) when its scenario shows
+  the edge of the block's envelope, where the criterion is meant to fail.
+  A scenario fails when a check fails, or passes against an
+  `"expect": "fail"`. CI fails on a failing scenario, and the
+  [scenario gallery](../scenarios/gallery.mdx) shows it.
 - **`vehicle`** (optional) holds geometry for the 3-D view: `arm_length` in
   m. Without it, the view draws the RP-1 default airframe.
 - **`provenance.equivalence`** (optional) declares an override for a chaotic
@@ -210,7 +215,7 @@ Two traces are equivalent under a profile when all of these hold:
    exception, compared as a single angle (below).
 4. `events` match exactly.
 5. Each check matches the reference check with the same `id`. Its `metric`,
-   `unit`, `limit`, `comparison`, and `pass` match exactly, and its `value`
+   `unit`, `limit`, `comparison`, `pass`, and `expect` match exactly, and its `value`
    satisfies the component rule with $r_{\text{tol}}$ = 1e-9 and
    $a_{\text{tol}}$ = 1e-9 in the check's unit. Both traces have the same
    set of check `id`s.

@@ -36,7 +36,9 @@ Look for three things:
   with z up). The vehicle then slides toward −y, to its right.
 
 The check below the player is computed by the scenario harness, in C++. The
-player only displays it (ANI-4).
+player only displays it (ANI-4). Its badge reads *pass* or *fail*, or
+*fails, as designed* for a check the trace expects to fail: a scenario
+that shows the edge of the block's envelope.
 
 ## How a trace gets onto a page
 
@@ -135,6 +137,7 @@ The `Docs traces` job in `ci.yml` runs on every pull request:
 | Check | Tool | Fails when |
 |---|---|---|
 | Schema and semantics | `npm run traces:check` (JSON Schema `docs-site/schemas/reflex-trace-1.schema.json`, plus `src/lib/trace/validate.js`) | A committed trace is malformed |
+| Failing scenario (BB-I2) | `npm run traces:check` (`src/lib/trace/status.js`) | A check in a committed trace fails, or passes when the trace marks it `"expect": "fail"` |
 | Staleness (ANI-3) | `scripts/gen-traces.sh` into `build/traces`, then `check.mjs --regen` | A regenerated trace is not equivalent to the committed one under the `regen` profile, or a scenario's trace is missing from either side |
 | Trace diff (BB-D3) | `npm run trace-diff -- <candidate> <reference> [--profile regen\|wasm]` | (used by the staleness check; also a local tool) It reports the first channel and sample that differ |
 | Docs build | `npm run build` | A page passes an invalid trace to `TracePlayer` |

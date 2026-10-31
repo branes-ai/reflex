@@ -1,0 +1,47 @@
+---
+title: Scenario Gallery
+description: Every trace scenario in reflex, grouped by block, with its pass criteria and status, the players that explain it, and a page for each that plots every channel. The published gallery comes from a fresh run of the suite, on every deploy and nightly.
+sidebar:
+  label: "Gallery"
+  group: "Scenarios"
+---
+
+import ScenarioGallery from '@site/components/trace/ScenarioGallery.astro';
+
+Every animation on this site plays a trace recorded by a scenario under
+`tools/trace/scenarios/`, from the block's own C++. Together the scenarios
+are the blocks' scenario suite (BB-I2 of the
+[building block standard](../standards/building-blocks.md)). This page lists
+all of them.
+
+Each scenario links to two kinds of page:
+- **Shown on** goes to the players that explain the scenario, with panels
+  chosen for that purpose;
+- the **scenario's name** goes to its own page, which plots every channel
+  that changes and lists the rest.
+
+## How the scenarios are run
+
+- **On every pull request**, CI runs every scenario with gcc and clang and
+  compares each trace with the committed one
+  ([what CI checks](../standards/trace-player.mdx#what-ci-checks)). A
+  trace that differs, or a scenario that fails, fails the pull request.
+- **On every deploy, and nightly**, the docs workflow runs the suite again on
+  main with both compilers, compares the traces with the committed ones,
+  and publishes the site from the gcc run. A failing scenario is published,
+  so that it shows here, and the workflow then fails.
+
+## Status
+
+| Status | Meaning |
+|---|---|
+| ✓ pass | Every check passes |
+| ✗ fails, as designed | A check fails that the trace marks `"expect": "fail"`: the scenario shows the edge of the block's envelope, and the page that plays it explains why. Every other check passes |
+| ✗ fail | A check fails |
+| ! passes, but is meant to fail | A check marked `"expect": "fail"` passes: the scenario no longer shows what its page says it does |
+| – no checks | The scenario illustrates without a pass criterion; its page's prose states what to look for |
+| ✗ *compiler*: … | That compiler's run of the scenario did not run, wrote an invalid trace, or differs from the committed trace |
+
+*Fail*, *passes, but is meant to fail*, and a compiler's failure count as failing.
+
+<ScenarioGallery />

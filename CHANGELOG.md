@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.4](https://github.com/branes-ai/reflex/compare/v0.7.3...v0.7.4) (2026-10-31)
+
+
+### Continuous Integration
+
+* give each run on main a concurrency group of its own ([#60](https://github.com/branes-ai/reflex/issues/60)) ([212aabe](https://github.com/branes-ai/reflex/commit/212aabe498f65a39afaecb05b920791304e4d823))
+* lint the PR title as well as its commits ([#61](https://github.com/branes-ai/reflex/issues/61)) ([8437a35](https://github.com/branes-ai/reflex/commit/8437a35711476fb4cc3d58ed090a8e4dc734965e))
+
 ## [0.7.3](https://github.com/branes-ai/reflex/compare/v0.7.2...v0.7.3) (2026-10-31)
 
 

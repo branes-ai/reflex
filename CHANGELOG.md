@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.9.1](https://github.com/branes-ai/reflex/compare/v0.9.0...v0.9.1) (2026-10-31)
+
+
+### Build System
+
+* docs-kit v0.4.1 for the docs site ([#67](https://github.com/branes-ai/reflex/issues/67)) ([9a16f72](https://github.com/branes-ai/reflex/commit/9a16f7256a807e368ea78ffb3e4658750f07c89d))
+
+
+### Documentation
+
+* **trace-player:** install from the v0.9.0 release, the first to carry the package ([#68](https://github.com/branes-ai/reflex/issues/68)) ([3ed78bc](https://github.com/branes-ai/reflex/commit/3ed78bcda5b7407bc14b3439be7ad9cc27d21bb9))
+
 ## [0.9.0](https://github.com/branes-ai/reflex/compare/v0.8.0...v0.9.0) (2026-10-31)
 
 

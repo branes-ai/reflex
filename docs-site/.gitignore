@@ -21,5 +21,9 @@ public/api/
 # prebuild/predev hooks); pinned to the C++ test gates + CI config.
 src/data/benchmarks.json
 
+# The deploy workflow's run of the scenario suite (check.mjs --report), which
+# the scenario gallery shows.
+src/run/
+
 # WebAssembly module of the live widgets (built by scripts/build-wasm.sh)
 public/wasm/

@@ -8,7 +8,7 @@ These documents are published at <https://branes-ai.github.io/reflex/>. The site
 | [standards/](standards/building-blocks.md) | [Building Block Standard](standards/building-blocks.md), [Block Pages and Animation](standards/animation.md), [Trace Player](standards/trace-player.mdx) |
 | [model/](model/quadrotor-explainer.mdx) | [How the Quadrotor Model Works](model/quadrotor-explainer.mdx), [Quadrotor Model](model/quadrotor.mdx), [Quadrotor V&V Plan](model/quadrotor-vv.mdx), [Quadrotor Model Deployment](model/quadrotor-deployment.mdx) |
 | [control/](control/quadrotor-control.md) | [Quadrotor Control Guide](control/quadrotor-control.md), [How the PID Controller Works](control/pid-explainer.mdx), [PID Controller](control/pid.mdx), [PID V&V Plan](control/pid-vv.mdx), [PID Deployment](control/pid-deployment.mdx), [How the Mixer Works](control/mixer-explainer.mdx), [Mixer](control/mixer.mdx), [Mixer V&V Plan](control/mixer-vv.mdx), [Mixer Deployment](control/mixer-deployment.mdx), [How the Cascade Works](control/cascade-explainer.mdx), [Cascaded Controller](control/cascade.mdx), [Cascade V&V Plan](control/cascade-vv.mdx), [Cascade Deployment](control/cascade-deployment.mdx) |
-| [dsp/](dsp/filters.md) | [Gyro Filters](dsp/filters.md) |
+| [dsp/](dsp/filters-explainer.mdx) | [How the Gyro Filters Work](dsp/filters-explainer.mdx), [Gyro Filters](dsp/filters.md), [Gyro Filters V&V Plan](dsp/filters-vv.mdx), [Gyro Filters Deployment](dsp/filters-deployment.mdx) |
 | [examples/](examples/gyro-lowpass.mdx) | [Mixed-Precision Gyro Filter](examples/gyro-lowpass.mdx) |
 | [Roadmap](roadmap.md) | From classical PID to fault-tolerant non-linear MPC. |
 

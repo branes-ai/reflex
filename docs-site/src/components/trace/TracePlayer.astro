@@ -1,0 +1,23 @@
+---
+// reflex's TracePlayer: the shared player (@branes-ai/trace-player, from
+// packages/trace-player), with `live` given as the name of one of reflex's
+// live scenarios (src/lib/trace/live.js), played by the site's WebAssembly
+// module. The pages in docs/ import this one; every other prop passes through.
+import Player from '@branes-ai/trace-player/TracePlayer.astro';
+import type { ComponentProps } from 'astro/types';
+import { LIVE } from '../../lib/trace/live.js';
+
+type Props = Omit<ComponentProps<typeof Player>, 'live'> & {
+  /** Live scenario name (a key of LIVE in src/lib/trace/live.js): adds parameter sliders. */
+  live?: string;
+};
+
+const { live, ...props } = Astro.props;
+const spec = live ? (LIVE as Record<string, any>)[live] : undefined;
+if (live && !spec) throw new Error(`TracePlayer "${props.title}": no live scenario "${live}"`);
+if (spec && !props.trace.provenance.scenario.includes(spec.trace.split('/').pop().replace('.json', ''))) {
+  throw new Error(`TracePlayer "${props.title}": live scenario "${live}" does not match the trace's scenario ${props.trace.provenance.scenario}`);
+}
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+---
+<Player {...props} live={spec && { scenario: live!, params: spec.params, wasm: `${base}wasm/reflex.mjs` }} />

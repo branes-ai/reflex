@@ -9,7 +9,7 @@
 // A committed trace with no regenerated counterpart, or a regenerated trace
 // that is not committed, fails: every trace on the site comes from a scenario
 // that CI runs. So does a failing scenario: a check that fails, or that
-// passes when the trace marks it as expected to fail (src/lib/trace/status.js).
+// passes when the trace marks it as expected to fail (@branes-ai/trace-player/status).
 //
 // --report adds this run's outcome per trace, under --label, to a JSON file
 // that the scenario gallery shows (the deploy workflow writes it, nightly):
@@ -26,9 +26,9 @@ import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync, copyFi
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { execFileSync } from 'node:child_process';
-import { validateTrace } from '../../src/lib/trace/validate.js';
-import { diffTraces } from '../../src/lib/trace/diff.js';
-import { traceStatus, failing, STATUS_LABEL } from '../../src/lib/trace/status.js';
+import { validateTrace } from '@branes-ai/trace-player/validate';
+import { diffTraces } from '@branes-ai/trace-player/diff';
+import { traceStatus, failing, STATUS_LABEL } from '@branes-ai/trace-player/status';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const committedDir = resolve(here, '../../src/traces');

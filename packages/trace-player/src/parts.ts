@@ -3,7 +3,7 @@
 // component and again in the browser when a live widget replaces the trace,
 // so both paths produce the same markup.
 
-import { checkStatus, STATUS_LABEL } from '../../lib/trace/status.js';
+import { checkStatus, STATUS_LABEL } from './lib/status.js';
 
 export interface TraceParts {
   provenance: {

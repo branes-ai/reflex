@@ -1,6 +1,6 @@
 ---
-// TracePlayer: plays a committed reflex-trace/1 file (Tier 1 of the block-page
-// animation standard, docs/standards/animation). A three.js vehicle view and
+// TracePlayer: plays a reflex-trace/1 file (Tier 1 of the block-page
+// animation standard, reflex docs/standards/animation). A three.js vehicle view and
 // SVG plots share one time cursor; playback controls, keyboard, provenance,
 // and the trace's checks sit around them.
 //
@@ -10,15 +10,16 @@
 //
 // With `live`, the player is also a widget (Tier 2): sliders rerun the
 // scenario's C++, compiled to WebAssembly, in the reader's browser, and the
-// player then plays that trace instead.
-import { validateTrace } from '../../lib/trace/validate.js';
-import { LIVE } from '../../lib/trace/live.js';
+// player then plays that trace instead. The module's contract is in
+// lib/live.js.
+import { validateTrace } from './lib/validate.js';
+import type { LiveSpec } from './lib/live.js';
 import { renderPanel, type PanelSpec } from './plot';
 import { playerId, renderChecks, renderEvents, renderProvenance } from './parts';
 import type { GhostSpec } from './vehicle-view';
 
 interface Props {
-  /** The trace, imported from src/traces/. */
+  /** The trace: a parsed reflex-trace/1 file, usually a JSON import. */
   trace: any;
   /** The one question the animation answers (ANI-7). */
   title: string;
@@ -32,8 +33,8 @@ interface Props {
   view?: boolean;
   /** A second run, drawn translucent beside the first: its position, attitude, and (optional) rotor thrust channels. */
   ghost?: GhostSpec;
-  /** Live scenario name (a key of LIVE in src/lib/trace/live.js): adds parameter sliders. */
-  live?: string;
+  /** A live scenario: adds parameter sliders that rerun it in WebAssembly (lib/live.js). */
+  live?: LiveSpec;
   /** For a live widget: what to predict before moving a slider (ANI-8). */
   prompt?: string;
 }
@@ -60,18 +61,13 @@ if (ghost) {
   }
 }
 const duration = trace.t[trace.t.length - 1];
-const liveSpec = live ? (LIVE as Record<string, any>)[live] : undefined;
-if (live && !liveSpec) throw new Error(`TracePlayer "${title}": no live scenario "${live}"`);
-if (liveSpec && !p.scenario.includes(liveSpec.trace.split('/').pop().replace('.json', ''))) {
-  throw new Error(`TracePlayer "${title}": live scenario "${live}" does not match the trace's scenario ${p.scenario}`);
-}
 // Slider values in display units, from the SI defaults.
 const sliderValue = (q: any) => Number((q.default / q.scale).toPrecision(6));
 const config = {
   thrustScale,
   panels: panels.map((x) => x.readout),
   ghost,
-  live: liveSpec && { scenario: live, params: liveSpec.params, plots, key: id, wasm: `${import.meta.env.BASE_URL.replace(/\/?$/, '/')}wasm/reflex.mjs` },
+  live: live && { ...live, plots, key: id },
 };
 ---
 
@@ -81,11 +77,11 @@ const config = {
     <span class="tp-rate" data-rate-badge>1× real time</span>
   </figcaption>
 
-  {liveSpec && (
+  {live && (
     <div class="tp-live" data-live>
       {prompt && <p class="tp-prompt"><b>Predict, then try it:</b> {prompt}</p>}
       <div class="tp-sliders">
-        {liveSpec.params.map((q: any, i: number) => (
+        {live.params.map((q, i) => (
           <label class="tp-slider">
             <span class="tp-slider-label">{q.label}</span>
             <input type="range" min={q.min} max={q.max} step={q.step} value={sliderValue(q)} data-param={i} />

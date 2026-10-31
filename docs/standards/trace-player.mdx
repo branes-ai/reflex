@@ -136,8 +136,8 @@ The `Docs traces` job in `ci.yml` runs on every pull request:
 
 | Check | Tool | Fails when |
 |---|---|---|
-| Schema and semantics | `npm run traces:check` (JSON Schema `docs-site/schemas/reflex-trace-1.schema.json`, plus `src/lib/trace/validate.js`) | A committed trace is malformed |
-| Failing scenario (BB-I2) | `npm run traces:check` (`src/lib/trace/status.js`) | A check in a committed trace fails, or passes when the trace marks it `"expect": "fail"` |
+| Schema and semantics | `npm run traces:check` (the package's JSON Schema, `schemas/reflex-trace-1.schema.json`, plus its `validate`) | A committed trace is malformed |
+| Failing scenario (BB-I2) | `npm run traces:check` (the package's `status`) | A check in a committed trace fails, or passes when the trace marks it `"expect": "fail"` |
 | Staleness (ANI-3) | `scripts/gen-traces.sh` into `build/traces`, then `check.mjs --regen` | A regenerated trace is not equivalent to the committed one under the `regen` profile, or a scenario's trace is missing from either side |
 | Trace diff (BB-D3) | `npm run trace-diff -- <candidate> <reference> [--profile regen\|wasm]` | (used by the staleness check; also a local tool) It reports the first channel and sample that differ |
 | Docs build | `npm run build` | A page passes an invalid trace to `TracePlayer` |
@@ -198,6 +198,32 @@ traces, and the sliders report that live runs are unavailable.
   WebGL, the plots and the description still carry the trace.
 - **Theme.** Colours come from the same tokens as the SVG figures, for light
   and dark. The layout stacks to one column at phone width.
+
+## The shared package
+
+The player, the schema, and the validator are the package
+`@branes-ai/trace-player`, in reflex's `packages/trace-player/`, so that a
+repo that builds on reflex plays its own traces in the same player (the
+[animation standard's](animation.md#boundary-with-mission-sitl) boundary
+with mission SITL). It ships with each reflex release as an npm tarball,
+`branes-ai-trace-player-<version>.tgz`, at the version of the release, and
+a consuming docs site pins that tarball's URL. The package's README is the
+consumer's guide: the install, the props, and the CI helpers.
+
+reflex's own site uses it in two ways:
+
+- The pages import `@site/components/trace/TracePlayer.astro`, a thin
+  wrapper that takes `live` as the name of one of reflex's live scenarios
+  and passes everything else to the package's component.
+- The site installs the package as a packed copy (`docs-site/.npmrc` sets
+  `install-links`), which holds the same files as the release tarball. A
+  file the tarball leaves out therefore fails reflex's own build first.
+  `npm run build`, `dev`, and the trace scripts first run
+  `scripts/player-sync.mjs`, which refreshes the copy when the package's
+  source has changed.
+
+A C++ consumer writes its traces with the same writer, `branes::reflex_trace`,
+which reflex's CMake defines for consumers too.
 
 ## Trace format additions
 

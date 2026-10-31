@@ -1,0 +1,34 @@
+{
+  "name": "@branes-ai/trace-player",
+  "version": "0.7.4",
+  "description": "The reflex-trace/1 schema, its validator, and TracePlayer, the Astro component that plays a trace on a docs site.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/branes-ai/reflex.git",
+    "directory": "packages/trace-player"
+  },
+  "exports": {
+    "./TracePlayer.astro": "./src/TracePlayer.astro",
+    "./parts": "./src/parts.ts",
+    "./live": "./src/lib/live.js",
+    "./validate": "./src/lib/validate.js",
+    "./diff": "./src/lib/diff.js",
+    "./status": "./src/lib/status.js",
+    "./channels": "./src/lib/channels.js",
+    "./schema.json": "./schemas/reflex-trace-1.schema.json"
+  },
+  "files": [
+    "src",
+    "schemas",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "astro": ">=5"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "three": "^0.180.0"
+  }
+}

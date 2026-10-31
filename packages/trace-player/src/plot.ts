@@ -2,7 +2,7 @@
 // trace's time axis, in the same style as the SignalFigure charts. The client
 // moves a time cursor across them and updates the legend readouts.
 
-import { channelUnit } from '../../lib/trace/channels.js';
+import { channelUnit } from './lib/channels.js';
 
 export interface PlotSpec {
   /** Channel to plot. */

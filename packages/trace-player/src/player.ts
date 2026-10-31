@@ -23,15 +23,6 @@ type Trace = TraceParts & {
   vehicle?: { arm_length?: number };
 };
 
-interface LiveParam {
-  label: string;
-  unit: string;
-  scale: number;
-  min: number;
-  max: number;
-  default: number;
-}
-
 interface LiveConfig {
   scenario: string;
   params: LiveParam[];
@@ -54,7 +45,7 @@ export interface ViewHandle {
 import type { GhostSpec } from './vehicle-view';
 import { barGeometry, renderPanel, type BarsReadout, type PanelSpec, type SpectrogramReadout } from './plot';
 import { eventTime, renderChecks, renderEvents, renderProvenance, type TraceParts } from './parts';
-import { runLive } from '../../lib/trace/live.js';
+import { runLive, type LiveParam } from './lib/live.js';
 
 // One WebAssembly module per page, loaded on the first slider move.
 let modulePromise: Promise<any> | null = null;

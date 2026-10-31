@@ -50,7 +50,13 @@ harmonic at 1753 Hz, so the gyro must run at 3.9 kHz or more. The
 explainer's sweep runs at 8 kHz. `sample_rate`'s default of 1 kHz suits a
 larger, slower-turning vehicle, not RP-1. A gyro that runs faster than the
 rate loop is filtered at the gyro rate, and the rate loop takes every
-n-th filtered sample; the low-pass keeps that decimation from aliasing.
+n-th filtered sample. That decimation aliases whatever is left above the
+rate loop's Nyquist frequency, half its rate, into the control band: a
+95 Hz line, below `min_hz` and so not notched, appears at 5 Hz in a
+100 Hz rate loop. Check the chain's attenuation against the rate loop's
+Nyquist frequency, not the gyro's. The 101 Hz low-pass of the
+[delay budget](#the-low-pass-and-the-delay-budget) is sized for phase,
+not as an anti-alias filter for a given decimation.
 
 <TracePlayer
   trace={lowRate}
@@ -118,8 +124,9 @@ A notch removes a band, not a line, and costs phase below its centre. A
 notch near the rate loop's crossover would cost the loop more phase than
 the vibration there is worth, so `min_hz` keeps every notch above a floor.
 Keep `min_hz` at least ten times above the rate loop's crossover: the
-default 100 Hz is 16 times RP-1's 6.3 Hz. Below it, the low-pass is the
-only filter. `fade_hz` makes each notch fade in over a band instead of
+default 100 Hz is 16 times RP-1's 6.3 Hz. A harmonic below it has no
+notch, and only the low-pass filters it; the same rotor's higher
+harmonics keep their notches while they are above the floor. `fade_hz` makes each notch fade in over a band instead of
 switching on with a jump; 0 switches each notch on at `min_hz`.
 
 ## The low-pass and the delay budget

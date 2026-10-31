@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/branes-ai/reflex/compare/v0.7.4...v0.8.0) (2026-10-31)
+
+
+### Features
+
+* **docs:** scenario gallery and nightly scenario runs (animation plan p4) ([#63](https://github.com/branes-ai/reflex/issues/63)) ([44af8b7](https://github.com/branes-ai/reflex/commit/44af8b74d9978a7e6dfecdce2d6f97487d2562b4))
+
 ## [0.7.4](https://github.com/branes-ai/reflex/compare/v0.7.3...v0.7.4) (2026-10-31)
 
 

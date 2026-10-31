@@ -1,0 +1,29 @@
+---
+// A scenario's status badge for the gallery: its checks (status.js) and, on a
+// published build, whether each compiler's fresh run matched the committed
+// trace. Text and symbol carry the state, colour only repeats it.
+import { STATUS_LABEL } from '../../lib/trace/status.js';
+
+interface Props {
+  status: string;
+  runs: { label: string; outcome: string }[];
+}
+const { status, runs } = Astro.props;
+const SYMBOL: Record<string, string> = { pass: '✓', designed: '✗', fail: '✗', unexpected: '!', none: '–' };
+const OUTCOME: Record<string, string> = {
+  stale: 'differs from the committed trace',
+  missing: 'did not run',
+  invalid: 'wrote an invalid trace',
+  extra: 'wrote a trace that is not committed',
+};
+const broken = runs.filter((r) => r.outcome !== 'match');
+---
+<span class={`sg-status sg-${status}`}>{SYMBOL[status]} {STATUS_LABEL[status]}</span>
+{broken.map((r) => <span class="sg-status sg-fail">✗ {r.label}: {OUTCOME[r.outcome] ?? r.outcome}</span>)}
+
+<style>
+  .sg-status { display: block; font-weight: 600; }
+  .sg-pass { color: var(--sl-color-green-high); }
+  .sg-fail, .sg-unexpected { color: var(--sl-color-red-high); }
+  .sg-designed, .sg-none { color: var(--sl-color-gray-2); }
+</style>

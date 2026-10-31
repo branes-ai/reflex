@@ -1,0 +1,90 @@
+---
+// The scenario gallery's index (animation plan P4): every scenario under
+// tools/trace/scenarios/, grouped by block, with its checks and status, the
+// player that explains it, and a link to its own page with every channel.
+import { scenarios, report, blockLabel } from '../../lib/trace/gallery.js';
+import { escapeHtml, fmt } from './parts';
+import ScenarioStatus from './ScenarioStatus.astro';
+import { failing } from '../../lib/trace/status.js';
+
+const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
+// Snake-case names break after their underscores, not mid-word.
+const breakable = (s: string) => escapeHtml(s).replaceAll('_', '_<wbr>');
+const CMP: Record<string, string> = { '<=': '≤', '>=': '≥' };
+const all = scenarios();
+const blocks = [...new Set(all.map((s) => s.dir))];
+const count = (pred: (s: (typeof all)[number]) => boolean) => all.filter(pred).length;
+const nFailing = count((s) => s.failing);
+const summary = [
+  `${count((s) => s.status === 'pass')} pass`,
+  `${count((s) => s.status === 'designed')} fail as designed`,
+  `${count((s) => failing(s.status))} fail`,
+  `${count((s) => s.status === 'none')} have none`,
+].join(', ');
+const hashed = Boolean(report && /^[0-9a-f]{7,40}$/.test(report.commit));
+const date = report && new Date(report.date).toISOString().replace('T', ' ').slice(0, 16);
+const compilers = report ? Object.entries(report.runs).map(([label, r]: [string, any]) => `${label} (${r.compiler})`) : [];
+---
+<div class="sg not-content">
+  <p class={nFailing ? 'sg-summary sg-alarm' : 'sg-summary'}>
+    <strong>{all.length} scenarios, {nFailing ? `${nFailing} failing` : 'none failing'}.</strong> Their checks: {summary}.
+  </p>
+  {report ? (
+    <p class="sg-run">
+      Run on {date} UTC at commit{' '}
+      {hashed ? <a href={`https://github.com/branes-ai/reflex/commit/${report.commit}`}><code>{report.commit}</code></a> : <code>{report.commit}</code>}, with{' '}
+      {compilers.join(' and ')}. Each run is compared with the committed traces; the pages play the{' '}
+      {Object.keys(report.runs)[0]} run.{report.run && <> <a href={report.run}>Workflow run</a>.</>}
+    </p>
+  ) : (
+    <p class="sg-run">
+      This build plays the committed traces and did not run the scenarios. The published site runs them
+      on every deploy and nightly.
+    </p>
+  )}
+  {blocks.map((dir) => (
+    <section>
+      <h2 id={`block-${dir}`}>{blockLabel(dir)}</h2>
+      <div class="sg-scroll"><table>
+        <colgroup><col class="sg-c-name" /><col class="sg-c-shown" /><col class="sg-c-checks" /><col class="sg-c-status" /></colgroup>
+        <thead><tr><th>Scenario</th><th>Shown on</th><th>Checks</th><th>Status</th></tr></thead>
+        <tbody>
+          {all.filter((s) => s.dir === dir).map((s) => (
+            <tr class={s.failing ? 'sg-row-fail' : undefined}>
+              <td><a href={`${base}scenarios/${s.dir}/${s.name}/`}><code set:html={breakable(s.name)} /></a></td>
+              <td>
+                {s.shownOn.length ? s.shownOn.map((p) => (
+                  <span class="sg-shown"><a href={`${base}${p.href}#${p.anchor}`}>{p.title}</a> <span class="sg-page">{p.page}</span></span>
+                )) : '—'}
+              </td>
+              <td>
+                {(s.trace.checks ?? []).length ? s.trace.checks.map((c: any) => (
+                  <span class="sg-check">
+                    {c.id} <code set:html={breakable(c.metric)} /> {fmt(c.value)} {CMP[c.comparison]} {fmt(c.limit)}{c.unit !== '1' ? ` ${c.unit}` : ''}
+                  </span>
+                )) : '—'}
+              </td>
+              <td><ScenarioStatus status={s.status} runs={s.runs} /></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+    </section>
+  ))}
+</div>
+
+<style>
+  .sg a { color: var(--sl-color-text-accent); }
+  .sg .sg-scroll { overflow-x: auto; }
+  .sg table { width: 100%; min-width: 40rem; table-layout: fixed; border-collapse: collapse; font-size: var(--sl-text-sm); }
+  .sg .sg-c-name { width: 19%; } .sg .sg-c-shown { width: 35%; } .sg .sg-c-checks { width: 30%; } .sg .sg-c-status { width: 16%; }
+  .sg .sg-page { display: block; color: var(--sl-color-gray-3); font-size: var(--sl-text-xs); }
+  .sg th, .sg td { text-align: left; vertical-align: top; padding: 0.4rem 0.6rem; border-bottom: 1px solid var(--sl-color-gray-5); }
+  .sg th { color: var(--sl-color-gray-2); font-weight: 600; }
+  .sg h2 { margin-top: 2rem; font-size: var(--sl-text-h3); }
+  .sg .sg-shown, .sg .sg-check { display: block; }
+  .sg .sg-shown + .sg-shown, .sg .sg-check + .sg-check { margin-top: 0.3rem; }
+  .sg .sg-row-fail td:first-child { box-shadow: inset 3px 0 0 var(--sl-color-red-high); }
+  .sg .sg-summary.sg-alarm strong { color: var(--sl-color-red-high); }
+  .sg .sg-run { color: var(--sl-color-gray-2); }
+</style>

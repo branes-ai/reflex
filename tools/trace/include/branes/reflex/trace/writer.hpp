@@ -19,7 +19,8 @@
 ///   W5: event times lie within [t.front(), t.back()] at serialization.
 ///   W6: a check's comparison is "<=" or ">=", its value and limit are
 ///       finite, its id is a requirement ID (e.g. "BB-V3") unique within the
-///       trace, and its metric and unit are non-empty.
+///       trace, and its metric and unit are non-empty. Only a check of the
+///       trace can be marked as expected to fail.
 ///   W7: channel names match [a-z][a-z0-9_]*; at least one channel; event
 ///       labels are non-empty and event times finite.
 /// Together these are the rules of the JSON Schema and validate.js, so a
@@ -71,6 +72,9 @@ struct Check {
     double value{0};
     double limit{0};
     std::string comparison;  ///< "<=" or ">="
+    /// The scenario shows the edge of the block's envelope, so the check is
+    /// meant to fail; serialized as "expect": "fail".
+    bool expect_fail{false};
     [[nodiscard]] bool pass() const {
         return comparison == "<=" ? value <= limit : value >= limit;
     }
@@ -318,6 +322,18 @@ public:
         checks_.push_back(std::move(c));
     }
 
+    /// Marks the check `id` as expected to fail, for a scenario that reuses
+    /// another's checks outside the envelope they hold in.
+    void expect_failure(std::string_view id) {
+        for (Check& c : checks_) {
+            if (c.id == id) {
+                c.expect_fail = true;
+                return;
+            }
+        }
+        throw std::invalid_argument("reflex-trace: no check " + std::string(id));  // W6
+    }
+
     /// Optional vehicle geometry the 3-D view draws to scale.
     void vehicle_arm_length(double meters) {
         if (!(meters > 0) || !std::isfinite(meters)) {
@@ -398,7 +414,8 @@ public:
             s += (i == 0 ? "\n" : ",\n") + std::string("    { \"id\": ") + quote(c.id) +
                  ", \"metric\": " + quote(c.metric) + ", \"unit\": " + quote(c.unit) +
                  ", \"value\": " + format_number(c.value) + ", \"limit\": " + format_number(c.limit) +
-                 ", \"comparison\": " + quote(c.comparison) + ", \"pass\": " + (c.pass() ? "true" : "false") + " }";
+                 ", \"comparison\": " + quote(c.comparison) + ", \"pass\": " + (c.pass() ? "true" : "false") +
+                 (c.expect_fail ? ", \"expect\": \"fail\" }" : " }");
         }
         s += checks_.empty() ? "]\n" : "\n  ]\n";
         s += "}\n";

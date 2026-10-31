@@ -3,6 +3,8 @@
 // component and again in the browser when a live widget replaces the trace,
 // so both paths produce the same markup.
 
+import { checkStatus, STATUS_LABEL } from '../../lib/trace/status.js';
+
 export interface TraceParts {
   provenance: {
     commit: string;
@@ -16,7 +18,7 @@ export interface TraceParts {
   schema: string;
   t: number[];
   events?: { t: number; label: string }[];
-  checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean }[];
+  checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean; expect?: string }[];
 }
 
 const REPO = 'https://github.com/branes-ai/reflex';
@@ -46,10 +48,12 @@ export function renderEvents(trace: TraceParts): string {
 export function renderChecks(trace: TraceParts): string {
   if (!trace.checks?.length) return '';
   const items = trace.checks
-    .map((c) =>
-      `<li class="${c.pass ? 'pass' : 'fail'}"><span class="tp-badge">${c.pass ? '✓ pass' : '✗ fail'}</span>` +
+    .map((c) => {
+      const status = checkStatus(c);
+      return `<li class="${status}"><span class="tp-badge">${c.pass ? '✓' : '✗'} ${STATUS_LABEL[status]}</span>` +
       `<b>${escapeHtml(c.id)}</b> ${escapeHtml(c.metric)} = ${fmt(c.value)}${c.unit !== '1' ? ` ${escapeHtml(c.unit)}` : ''} ` +
-      `(${escapeHtml(c.comparison)} ${fmt(c.limit)}), computed by the scenario harness</li>`)
+      `(${escapeHtml(c.comparison)} ${fmt(c.limit)}), computed by the scenario harness</li>`;
+    })
     .join('');
   return `<ul class="tp-checks">${items}</ul>`;
 }

@@ -128,7 +128,7 @@ export function diffTraces(a, b, profileName = 'regen') {
     for (const [id, cb] of mb) {
       const ca = ma.get(id);
       if (!ca) continue;
-      for (const key of ['metric', 'unit', 'limit', 'comparison', 'pass']) {
+      for (const key of ['metric', 'unit', 'limit', 'comparison', 'pass', 'expect']) {
         if (ca[key] !== cb[key]) failures.push(`check ${id}.${key}: ${JSON.stringify(ca[key])} vs ${JSON.stringify(cb[key])}`);
       }
       if (!within(ca.value, cb.value, CHECK_TOL, CHECK_TOL)) failures.push(`check ${id}.value: ${ca.value} vs ${cb.value}`);

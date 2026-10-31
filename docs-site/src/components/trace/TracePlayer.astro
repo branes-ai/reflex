@@ -317,7 +317,8 @@ const config = {
   .trace-player .tp-checks b { color: var(--tp-ink); }
   .trace-player .tp-badge { font-weight: 600; margin-right: 0.35rem; }
   .trace-player .tp-checks .pass .tp-badge { color: var(--tp-good); }
-  .trace-player .tp-checks .fail .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-checks .fail .tp-badge, .trace-player .tp-checks .unexpected .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-checks .designed .tp-badge { color: var(--tp-ink); }
   .trace-player .tp-live { border: 1px solid var(--tp-border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
   .trace-player .tp-prompt { color: var(--tp-ink); margin-bottom: 0.5rem; }
   .trace-player .tp-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.4rem 1rem; }

@@ -1,7 +1,7 @@
 {
   "schema": "reflex-trace/1",
   "provenance": {
-    "commit": "580f380", "block": "dsp/filters",
+    "commit": "4265b52", "block": "dsp/filters",
     "scenario": "tools/trace/scenarios/filters/low_rate.cpp", "seed": 20261030,
     "compiler": "gcc 15.2 optimized", "dt_sim": 0.001, "dt_trace": 0.025
   },
@@ -1325,7 +1325,7 @@
     { "t": 3.5, "label": "held at 90 % of maximum speed: fundamentals 500 to 552 Hz" }
   ],
   "checks": [
-    { "id": "BB-I2", "metric": "vibration_residual_db", "unit": "dB", "value": -1.0785413107704285, "limit": -30, "comparison": "<=", "pass": false },
+    { "id": "BB-I2", "metric": "vibration_residual_db", "unit": "dB", "value": -1.0785413107704285, "limit": -30, "comparison": "<=", "pass": false, "expect": "fail" },
     { "id": "BB-C2", "metric": "motion_gain_error", "unit": "1", "value": 0.00034019508995375425, "limit": 0.02, "comparison": "<=", "pass": true }
   ]
 }

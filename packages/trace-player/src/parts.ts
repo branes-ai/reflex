@@ -85,10 +85,13 @@ export function renderProvenance(trace: TraceParts, live = false, footer: Footer
   const p = trace.provenance;
   const REPO = (footer.repo ?? DEFAULT_REPO).replace(/\/$/, '');
   const code = (s: string) => `<code>${escapeHtml(s)}</code>`;
-  const commit = /^[0-9a-f]{7,40}$/.test(p.commit) ? `<a href="${REPO}/commit/${p.commit}">${code(p.commit)}</a>` : code(p.commit);
+  const hash = /^[0-9a-f]{7,40}$/.test(p.commit);
+  const commit = hash ? `<a href="${REPO}/commit/${p.commit}">${code(p.commit)}</a>` : code(p.commit);
+  // The scenario as it was at the recorded commit; without a hash, the default branch's.
+  const ref = hash ? p.commit : 'HEAD';
   const spans = [
     `Block ${code(p.block)}`,
-    `Scenario <a href="${REPO}/blob/main/${escapeHtml(p.scenario)}">${code(p.scenario)}</a>`,
+    `Scenario <a href="${REPO}/blob/${ref}/${escapeHtml(p.scenario)}">${code(p.scenario)}</a>`,
     `Seed ${p.seed}`,
     `dt<sub>sim</sub> ${p.dt_sim} s · dt<sub>trace</sub> ${p.dt_trace ?? 'non-uniform'} s`,
     escapeHtml(p.compiler),

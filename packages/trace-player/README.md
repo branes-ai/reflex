@@ -69,7 +69,7 @@ The props:
 | `ghost` | A second run drawn translucent beside the first: `{ position, attitude, thrusts? }` channel names |
 | `live` | `{ scenario, params, wasm }`: sliders that rerun the scenario in a WebAssembly module (see `src/lib/live.js` for the module's contract) |
 | `prompt` | For a live widget: what to predict before moving a slider (ANI-8) |
-| `repo` | The GitHub repository the footer links the scenario and the commit to; the default is reflex, so set it to yours |
+| `repo` | The GitHub repository the footer links the commit and the scenario to (the scenario as it was at that commit); the default is reflex, so set it to yours |
 | `provenanceNote` | How the trace is kept, at the end of the footer; the default, "checked by CI against a fresh run", is true of reflex's traces |
 
 In CI, validate the traces a site commits:

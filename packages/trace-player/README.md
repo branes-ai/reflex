@@ -25,7 +25,7 @@ in the docs site's `package.json`:
 
 ```json
 "dependencies": {
-  "@branes-ai/trace-player": "https://github.com/branes-ai/reflex/releases/download/v0.8.0/branes-ai-trace-player-0.8.0.tgz"
+  "@branes-ai/trace-player": "https://github.com/branes-ai/reflex/releases/download/v0.9.0/branes-ai-trace-player-0.9.0.tgz"
 }
 ```
 

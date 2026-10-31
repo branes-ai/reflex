@@ -150,9 +150,10 @@ One schema, `reflex-trace/1`, serves reflex pages and mission replays:
 #### Field definitions
 
 The schema is normative. A JSON Schema file,
-`docs-site/schemas/reflex-trace-1.schema.json`, checks structure and types.
-A validator, `docs-site/src/lib/trace/validate.js`, checks the semantic
-rules a JSON Schema cannot express: lengths, monotonicity, and unit norm.
+`packages/trace-player/schemas/reflex-trace-1.schema.json`, checks structure
+and types. A validator, `packages/trace-player/src/lib/validate.js`, checks
+the semantic rules a JSON Schema cannot express: lengths, monotonicity, and
+unit norm. Both ship in the shared player package, `@branes-ai/trace-player`.
 CI validates every committed trace, and `TracePlayer` refuses a trace that
 fails, which fails the docs build. The C++ writer
 (`tools/trace/include/branes/reflex/trace/writer.hpp`) enforces the same

@@ -3,7 +3,7 @@
 // component and again in the browser when a live widget replaces the trace,
 // so both paths produce the same markup.
 
-import { checkStatus, STATUS_LABEL } from '../../lib/trace/status.js';
+import { checkStatus, STATUS_LABEL } from './lib/status.js';
 
 export interface TraceParts {
   provenance: {
@@ -21,7 +21,18 @@ export interface TraceParts {
   checks?: { id: string; metric: string; unit: string; value: number; limit: number; comparison: string; pass: boolean; expect?: string }[];
 }
 
-const REPO = 'https://github.com/branes-ai/reflex';
+const DEFAULT_REPO = 'https://github.com/branes-ai/reflex';
+const NOTE = 'checked by CI against a fresh run';
+
+/**
+ * What the footer links to and says about the trace: `repo`, the GitHub
+ * repository that holds the scenario and the commit (default reflex), and
+ * `note`, how the trace is kept (default: checked by CI against a fresh run).
+ */
+export interface FooterOptions {
+  repo?: string;
+  note?: string;
+}
 
 export function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
@@ -70,20 +81,24 @@ export function playerId(provenance: { block: string; scenario: string }, title:
 }
 
 /** The footer's contents. `live` marks a trace computed in the reader's browser. */
-export function renderProvenance(trace: TraceParts, live = false): string {
+export function renderProvenance(trace: TraceParts, live = false, footer: FooterOptions = {}): string {
   const p = trace.provenance;
+  const REPO = (footer.repo ?? DEFAULT_REPO).replace(/\/$/, '');
   const code = (s: string) => `<code>${escapeHtml(s)}</code>`;
-  const commit = /^[0-9a-f]{7,40}$/.test(p.commit) ? `<a href="${REPO}/commit/${p.commit}">${code(p.commit)}</a>` : code(p.commit);
+  const hash = /^[0-9a-f]{7,40}$/.test(p.commit);
+  const commit = hash ? `<a href="${REPO}/commit/${p.commit}">${code(p.commit)}</a>` : code(p.commit);
+  // The scenario as it was at the recorded commit; without a hash, the default branch's.
+  const ref = hash ? p.commit : 'HEAD';
   const spans = [
     `Block ${code(p.block)}`,
-    `Scenario <a href="${REPO}/blob/main/${escapeHtml(p.scenario)}">${code(p.scenario)}</a>`,
+    `Scenario <a href="${REPO}/blob/${ref}/${escapeHtml(p.scenario)}">${code(p.scenario)}</a>`,
     `Seed ${p.seed}`,
     `dt<sub>sim</sub> ${p.dt_sim} s · dt<sub>trace</sub> ${p.dt_trace ?? 'non-uniform'} s`,
     escapeHtml(p.compiler),
     `${live ? 'Built from' : 'Generated at'} ${commit}`,
     live
       ? `Format ${code(trace.schema)}, computed in this browser by the same C++ compiled to WebAssembly`
-      : `Format ${code(trace.schema)}, checked by CI against a fresh run`,
+      : `Format ${code(trace.schema)}, ${escapeHtml(footer.note ?? NOTE)}`,
   ];
   return spans.map((s) => `<span>${s}</span>`).join('');
 }

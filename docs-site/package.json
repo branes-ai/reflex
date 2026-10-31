@@ -5,21 +5,28 @@
   "private": true,
   "scripts": {
     "sync": "docs-kit sync",
+    "predev": "node scripts/player-sync.mjs",
     "dev": "docs-kit dev",
+    "prestart": "node scripts/player-sync.mjs",
     "start": "docs-kit dev",
+    "prebuild": "node scripts/player-sync.mjs",
     "build": "docs-kit build",
+    "precheck": "node scripts/player-sync.mjs",
     "check": "docs-kit check",
     "api": "docs-kit api",
+    "prebuild:full": "node scripts/player-sync.mjs",
     "build:full": "docs-kit api && docs-kit build",
     "preview": "docs-kit preview",
+    "pretraces:check": "node scripts/player-sync.mjs",
     "traces:check": "node scripts/trace/check.mjs",
+    "pretrace-diff": "node scripts/player-sync.mjs",
     "trace-diff": "node scripts/trace/trace-diff.mjs",
     "size-budget": "node scripts/trace/size-budget.mjs",
+    "prewasm-agree": "node scripts/player-sync.mjs",
     "wasm-agree": "node scripts/trace/wasm-agree.mjs"
   },
   "dependencies": {
     "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.2.1",
-    "ajv": "^8.17.1",
-    "three": "^0.180.0"
+    "@branes-ai/trace-player": "file:../packages/trace-player"
   }
 }

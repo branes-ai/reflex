@@ -2,6 +2,10 @@
 // browser from the WebAssembly module (tools/wasm/reflex_wasm.cpp), with the
 // same C++ as the native trace executable that wrote its committed trace.
 //
+// TracePlayer (src/components/trace/TracePlayer.astro) resolves its `live`
+// name here for the shared player, @branes-ai/trace-player, which runs it
+// (its lib/live.js has the module's contract).
+//
 // For each scenario: the committed trace it starts from, and up to three
 // parameters, in the order reflex_run() takes them. Ranges match the checks in
 // the scenario's header (ANI-9: they stay inside the block's validity
@@ -79,11 +83,3 @@ export const LIVE = {
     ],
   },
 };
-
-/** Runs `scenario` in a loaded module with SI parameter values; returns the parsed trace. */
-export function runLive(module, scenario, values) {
-  const p = [...values, 0, 0, 0].slice(0, 3);
-  const ptr = module.ccall('reflex_run', 'number', ['string', 'number', 'number', 'number'], [scenario, ...p]);
-  if (!ptr) throw new Error(module.ccall('reflex_error', 'string', [], []));
-  return JSON.parse(module.UTF8ToString(ptr));
-}

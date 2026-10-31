@@ -5,8 +5,8 @@
 //   node scripts/trace/trace-diff.mjs <candidate.json> <reference.json> [--profile regen|wasm]
 
 import { readFileSync } from 'node:fs';
-import { diffTraces } from '../../src/lib/trace/diff.js';
-import { validateTrace } from '../../src/lib/trace/validate.js';
+import { diffTraces } from '@branes-ai/trace-player/diff';
+import { validateTrace } from '@branes-ai/trace-player/validate';
 
 const args = process.argv.slice(2);
 const p = args.indexOf('--profile');

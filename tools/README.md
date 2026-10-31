@@ -13,7 +13,9 @@ the docs site (see the *Trace Player* page under Standards).
 
 - `trace/include/branes/reflex/trace/writer.hpp`: the header-only writer
   (`branes::reflex_trace`). It enforces the format's invariants as samples are
-  recorded.
+  recorded. `trace/CMakeLists.txt` defines it even when reflex is a
+  dependency and the tools are off, so a consuming repo can export its own
+  traces (racing-drone's mission replays).
 - `trace/scenarios/<block>/<scenario>.cpp`: one executable each, built as
   `trace_<block>_<scenario>` (target `reflex_traces` builds all of them). Each
   writes `$REFLEX_TRACE_DIR/<block>/<scenario>.json`. Headers next to the

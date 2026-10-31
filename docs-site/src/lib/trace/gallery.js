@@ -5,8 +5,8 @@
 
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { traceStatus, failing } from './status.js';
-import { playerId } from '../../components/trace/parts';
+import { traceStatus, failing } from '@branes-ai/trace-player/status';
+import { playerId } from '@branes-ai/trace-player/parts';
 
 const traces = import.meta.glob('../../traces/*/*.json', { eager: true, import: 'default' });
 // Written by check.mjs --report in the deploy workflow; absent in a local build.

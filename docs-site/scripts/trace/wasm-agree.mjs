@@ -10,9 +10,10 @@
 import { readFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { LIVE, runLive } from '../../src/lib/trace/live.js';
-import { validateTrace } from '../../src/lib/trace/validate.js';
-import { diffTraces } from '../../src/lib/trace/diff.js';
+import { LIVE } from '../../src/lib/trace/live.js';
+import { runLive } from '@branes-ai/trace-player/live';
+import { validateTrace } from '@branes-ai/trace-player/validate';
+import { diffTraces } from '@branes-ai/trace-player/diff';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const modulePath = resolve(process.argv[2] ?? resolve(here, '../../public/wasm/reflex.mjs'));

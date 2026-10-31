@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://branes-ai.github.io/reflex/schemas/reflex-trace-1.schema.json",
   "title": "reflex-trace/1",
-  "description": "Structure and types of a reflex trace. The semantic rules (cardinality, monotone uniform time, unit quaternions, event range, units of non-reserved channels) are checked by src/lib/trace/validate.js. Normative text: docs/standards/animation (Trace schema).",
+  "description": "Structure and types of a reflex trace. The semantic rules (cardinality, monotone uniform time, unit quaternions, event range, units of non-reserved channels) are checked by src/lib/validate.js in @branes-ai/trace-player. Normative text: reflex docs/standards/animation (Trace schema).",
   "type": "object",
   "required": ["schema", "provenance", "frames", "t", "channels"],
   "additionalProperties": false,

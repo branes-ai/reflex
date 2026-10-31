@@ -19,7 +19,10 @@
   ],
   "packages": {
     ".": {
-      "initial-version": "0.1.0"
+      "initial-version": "0.1.0",
+      "extra-files": [
+        { "type": "json", "path": "packages/trace-player/package.json", "jsonpath": "$.version" }
+      ]
     }
   }
 }

@@ -1,0 +1,339 @@
+---
+// TracePlayer: plays a reflex-trace/1 file (Tier 1 of the block-page
+// animation standard, reflex docs/standards/animation). A three.js vehicle view and
+// SVG plots share one time cursor; playback controls, keyboard, provenance,
+// and the trace's checks sit around them.
+//
+// The trace is validated at build time: an invalid trace fails the docs build
+// (the player refuses it). Dynamics are never computed here; the view shows
+// each sample as recorded (sample-and-hold, no interpolation).
+//
+// With `live`, the player is also a widget (Tier 2): sliders rerun the
+// scenario's C++, compiled to WebAssembly, in the reader's browser, and the
+// player then plays that trace instead. The module's contract is in
+// lib/live.js.
+import { validateTrace } from './lib/validate.js';
+import type { LiveSpec } from './lib/live.js';
+import { renderPanel, type PanelSpec } from './plot';
+import { playerId, renderChecks, renderEvents, renderProvenance } from './parts';
+import type { GhostSpec } from './vehicle-view';
+
+interface Props {
+  /** The trace: a parsed reflex-trace/1 file, usually a JSON import. */
+  trace: any;
+  /** The one question the animation answers (ANI-7). */
+  title: string;
+  /** Text description of what happens (ANI-10). */
+  description: string;
+  /** Time plots, bar panels (`kind: 'bars'`) that show one sample at the cursor, and spectrograms (`kind: 'spectrogram'`). */
+  plots: PanelSpec[];
+  /** Thrust-arrow scale [m per N]; shown on screen (ANI-5). */
+  thrustScale?: number;
+  /** Show the 3-D vehicle view (needs position and attitude). */
+  view?: boolean;
+  /** A second run, drawn translucent beside the first: its position, attitude, and (optional) rotor thrust channels. */
+  ghost?: GhostSpec;
+  /** A live scenario: adds parameter sliders that rerun it in WebAssembly (lib/live.js). */
+  live?: LiveSpec;
+  /** For a live widget: what to predict before moving a slider (ANI-8). */
+  prompt?: string;
+  /** The GitHub repository the footer links the scenario and commit to (default reflex's). */
+  repo?: string;
+  /** How the trace is kept, in the footer (default "checked by CI against a fresh run"). */
+  provenanceNote?: string;
+}
+
+const { trace, title, description, plots, thrustScale = 0.04, ghost, live, prompt, repo, provenanceNote } = Astro.props;
+const footer = { repo, note: provenanceNote };
+const errors = validateTrace(trace);
+if (errors.length) {
+  throw new Error(`TracePlayer "${title}": invalid reflex-trace/1 trace:\n  ${errors.join('\n  ')}`);
+}
+const view = (Astro.props.view ?? true) && 'position' in trace.channels && 'attitude' in trace.channels;
+const p = trace.provenance;
+const id = playerId(p, title);
+const panels = plots.map((spec, i) => renderPanel(trace, spec, `${id}-${i}`));
+if (ghost) {
+  // The 3-D view reads these as vectors; a wrong width would make the ghost vanish silently.
+  const need: [string | undefined, number][] = [[ghost.position, 3], [ghost.attitude, 4], [ghost.thrusts, 4]];
+  for (const [name, width] of need) {
+    if (!name) continue;
+    const ch = trace.channels[name];
+    if (!ch) throw new Error(`TracePlayer "${title}": no ghost channel "${name}"`);
+    if (!Array.isArray(ch[0]) || ch[0].length !== width) {
+      throw new Error(`TracePlayer "${title}": ghost channel "${name}" must have ${width} components`);
+    }
+  }
+}
+const duration = trace.t[trace.t.length - 1];
+// Slider values in display units, from the SI defaults.
+const sliderValue = (q: any) => Number((q.default / q.scale).toPrecision(6));
+const config = {
+  thrustScale,
+  panels: panels.map((x) => x.readout),
+  ghost,
+  footer,
+  live: live && { ...live, plots, key: id },
+};
+---
+
+<figure class="trace-player not-content" id={id} aria-labelledby={`${id}-title`} data-trace-player>
+  <figcaption class="tp-head">
+    <span class="tp-title" id={`${id}-title`}>{title}</span>
+    <span class="tp-rate" data-rate-badge>1× real time</span>
+  </figcaption>
+
+  {live && (
+    <div class="tp-live" data-live>
+      {prompt && <p class="tp-prompt"><b>Predict, then try it:</b> {prompt}</p>}
+      <div class="tp-sliders">
+        {live.params.map((q, i) => (
+          <label class="tp-slider">
+            <span class="tp-slider-label">{q.label}</span>
+            <input type="range" min={q.min} max={q.max} step={q.step} value={sliderValue(q)} data-param={i} />
+            <output data-param-value={i}>{q.unit ? `${sliderValue(q)} ${q.unit}` : sliderValue(q)}</output>
+          </label>
+        ))}
+      </div>
+      <div class="tp-live-bar">
+        <button type="button" data-live-reset disabled>Back to the recorded run</button>
+        <span class="tp-live-status" data-live-status aria-live="polite">
+          Showing the recorded run. Moving a slider reruns the same C++ in your browser (WebAssembly).
+        </span>
+      </div>
+    </div>
+  )}
+
+  <div class={view ? 'tp-stage' : 'tp-stage no-view'}>
+    {view && (
+      <div class="tp-view" data-vehicle-view>
+        <div class="tp-canvas" data-canvas></div>
+        <div class="tp-overlay tp-legend">
+          World: z up · Body: x forward, y left, z up<br />
+          Rotors (PX4 Quad X): <b>0</b> FR, <b>1</b> RL spin CCW · <b>2</b> FL, <b>3</b> RR spin CW
+          {ghost && <><br />Translucent: {ghost.label}</>}
+        </div>
+        <div class="tp-bottom">
+          <div class="tp-overlay tp-event" data-event aria-live="polite"></div>
+          <div class="tp-overlay tp-scale">
+            Thrust arrows: 1 N = {Math.round(thrustScale * 100)} cm · Grid: 0.5 m · Body axes: x red, y green, z blue
+          </div>
+        </div>
+        <div class="tp-overlay tp-views" role="group" aria-label="Camera">
+          <button type="button" data-camera="chase" aria-pressed="true">Chase</button>
+          <button type="button" data-camera="behind" aria-pressed="false">Behind</button>
+          <button type="button" data-camera="overview" aria-pressed="false">Overview</button>
+        </div>
+        <p class="tp-fallback" data-fallback hidden>
+          The 3-D view needs WebGL, which this browser does not provide. The plots and the description below show the same trace.
+        </p>
+      </div>
+    )}
+    <div class="tp-plots">
+      {panels.map((panel, i) => (
+        <div class="tp-panel" data-panel={i}>
+          <div class="tp-panel-head">
+            <span class="tp-panel-title">{panel.title}</span>
+            <span class="tp-panel-legend">
+              {panel.legend.map((item, j) => (
+                <span class="tp-key">
+                  <span class={`tp-swatch k-${item.color}${item.dashed ? ' dashed' : ''}`} aria-hidden="true"></span>
+                  {item.label}
+                  <span class="tp-value" data-readout={j}></span>
+                </span>
+              ))}
+              {panel.dashed && <span class="tp-key tp-muted">dashed: {panel.dashed}</span>}
+              {'scale' in panel && panel.scale && (
+                <span class="tp-key tp-scale-key">
+                  {panel.scale.lo}<span class="tp-ramp" aria-hidden="true"></span>{panel.scale.hi}
+                  <span class="tp-muted">({panel.scale.unit})</span>
+                </span>
+              )}
+            </span>
+          </div>
+          <div class="tp-svg" data-svg set:html={panel.svg} />
+          {panel.readout.bars && <p class="tp-sr" data-bars-text></p>}
+          {'spectrogram' in panel.readout && panel.readout.spectrogram && <p class="tp-sr" data-spectrogram-text></p>}
+        </div>
+      ))}
+    </div>
+  </div>
+
+  <div class="tp-controls">
+    <button type="button" class="tp-play" data-play aria-label="Play">
+      <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true"><path data-play-icon d="M4 2.5v11l9-5.5z" /></svg>
+    </button>
+    <input
+      type="range"
+      class="tp-scrub"
+      data-scrub
+      min="0"
+      max={trace.t.length - 1}
+      step="1"
+      value="0"
+      aria-label="Time"
+      aria-valuetext="t = 0.000 s"
+    />
+    <span class="tp-time" data-time>t = 0.000 s / {duration.toFixed(3)} s</span>
+    <label class="tp-speed">
+      Speed
+      <select data-speed>
+        <option value="0.1">0.1×</option>
+        <option value="0.25">0.25×</option>
+        <option value="0.5">0.5×</option>
+        <option value="1" selected>1×</option>
+      </select>
+    </label>
+  </div>
+  <p class="tp-keys">Keys (with the player focused): Space play/pause · ← → one sample (Shift: ten) · Home/End · [ ] speed</p>
+
+  <p class="tp-desc">{description}</p>
+
+  <div data-events set:html={renderEvents(trace)} />
+  <div data-checks set:html={renderChecks(trace)} />
+  <footer class="tp-prov" data-prov set:html={renderProvenance(trace, false, footer)} />
+
+  <script type="application/json" data-trace set:html={JSON.stringify({ trace, config }).replace(/</g, '\\u003c')} />
+</figure>
+
+<style is:global>
+  .trace-player {
+    color-scheme: light;
+    --tp-surface: #fcfcfb; --tp-ink: #0b0b0b; --tp-ink2: #52514e; --tp-muted: #898781;
+    --tp-grid: #e1e0d9; --tp-axis: #c3c2b7; --tp-border: rgba(11, 11, 11, 0.1);
+    --tp-s1: #2a78d6; --tp-s2: #eb6834; --tp-s3: #1baf7a; --tp-s4: #eda100;
+    --tp-x: #d03b3b; --tp-y: #1f9d3a; --tp-z: #2a6fd6;
+    --tp-good: #0e7c3a; --tp-bad: #c62828;
+    /* Sequential ramp for spectrograms: the lowest level recedes into the surface. */
+    --tp-seq-0: #f4f8fd; --tp-seq-1: #b7d3f6; --tp-seq-2: #6da7ec; --tp-seq-3: #2a78d6; --tp-seq-4: #184f95; --tp-seq-5: #0d366b;
+    margin: 1.5rem 0;
+    border: 1px solid var(--tp-border);
+    border-radius: 8px;
+    background: var(--tp-surface);
+    color: var(--tp-ink);
+    padding: 0.75rem;
+    font-size: var(--sl-text-sm);
+  }
+  :root[data-theme='dark'] .trace-player {
+    color-scheme: dark;
+    --tp-surface: #1a1a19; --tp-ink: #ffffff; --tp-ink2: #c3c2b7; --tp-muted: #898781;
+    --tp-grid: #2c2c2a; --tp-axis: #383835; --tp-border: rgba(255, 255, 255, 0.1);
+    --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
+    --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
+    --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+    --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme='light']):not([data-theme='dark'])) .trace-player {
+      color-scheme: dark;
+      --tp-surface: #1a1a19; --tp-ink: #ffffff; --tp-ink2: #c3c2b7; --tp-muted: #898781;
+      --tp-grid: #2c2c2a; --tp-axis: #383835; --tp-border: rgba(255, 255, 255, 0.1);
+      --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
+      --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
+      --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+      --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
+    }
+  }
+  .trace-player:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 2px; }
+  .trace-player :is(p, ol, ul, footer, div) { margin-top: 0; }
+  .trace-player .tp-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .trace-player .tp-title { min-width: 0; overflow-wrap: anywhere; font-weight: 600; font-size: var(--sl-text-base); color: var(--tp-ink); }
+  .trace-player .tp-rate { color: var(--tp-ink2); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  /* Starlight's content column is narrow, so the view sits above the plots;
+     side by side only when the player itself is wide. */
+  .trace-player { container-type: inline-size; }
+  .trace-player .tp-stage { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+  @container (min-width: 62rem) { .trace-player .tp-stage:not(.no-view) { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); } }
+  .trace-player .tp-view { position: relative; aspect-ratio: 16 / 10; border-radius: 6px; border: 1px solid var(--tp-border); overflow: hidden; }
+  @container (max-width: 32rem) { .trace-player .tp-view { aspect-ratio: 1; } }
+  .trace-player .tp-canvas, .trace-player .tp-canvas canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  .trace-player .tp-overlay { position: absolute; color: var(--tp-ink2); font-size: 0.72rem; line-height: 1.35; pointer-events: none;
+    background: color-mix(in srgb, var(--tp-surface) 80%, transparent); padding: 0.2rem 0.4rem; border-radius: 4px; margin: 0; }
+  .trace-player .tp-overlay b { color: var(--tp-ink); }
+  .trace-player .tp-legend { top: 0.4rem; left: 0.4rem; max-width: 70%; }
+  .trace-player .tp-bottom { position: absolute; bottom: 0.4rem; left: 0.4rem; right: 0.4rem; display: flex; flex-direction: column;
+    align-items: flex-start; gap: 0.2rem; pointer-events: none; }
+  .trace-player .tp-bottom .tp-overlay { position: static; }
+  .trace-player .tp-event { color: var(--tp-ink); font-weight: 600; }
+  .trace-player .tp-event:empty { display: none; }
+  .trace-player .tp-views { top: 0.4rem; right: 0.4rem; pointer-events: auto; display: flex; flex-direction: column; gap: 0.2rem; background: none; padding: 0; }
+  .trace-player button { font: inherit; color: var(--tp-ink); background: var(--tp-surface); border: 1px solid var(--tp-axis); border-radius: 4px; padding: 0.15rem 0.5rem; cursor: pointer; }
+  .trace-player button:hover { border-color: var(--tp-ink2); }
+  .trace-player button:focus-visible, .trace-player select:focus-visible, .trace-player input:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 1px; }
+  .trace-player .tp-views button[aria-pressed='true'] { background: var(--tp-ink); color: var(--tp-surface); border-color: var(--tp-ink); }
+  .trace-player .tp-fallback { position: absolute; inset: 0; display: grid; place-items: center; padding: 1rem; text-align: center; color: var(--tp-ink2); }
+  .trace-player .tp-fallback[hidden] { display: none; }
+  .trace-player .tp-plots { display: flex; flex-direction: column; gap: 0.4rem; min-width: 0; }
+  .trace-player .tp-panel-head { display: flex; flex-wrap: wrap; gap: 0.15rem 0.75rem; align-items: baseline; }
+  .trace-player .tp-panel-title { font-weight: 600; color: var(--tp-ink); }
+  .trace-player .tp-panel-legend { display: flex; flex-wrap: wrap; gap: 0.1rem 0.75rem; color: var(--tp-ink2); }
+  .trace-player .tp-key { white-space: nowrap; }
+  .trace-player .tp-muted { color: var(--tp-muted); }
+  .trace-player .tp-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .trace-player .tp-value { color: var(--tp-ink); font-variant-numeric: tabular-nums; margin-left: 0.25rem; }
+  .trace-player .tp-swatch { display: inline-block; width: 0.75rem; height: 3px; border-radius: 1.5px; vertical-align: middle; margin-right: 0.3rem; }
+  .trace-player .k-1 { --k: var(--tp-s1); } .trace-player .k-2 { --k: var(--tp-s2); }
+  .trace-player .k-3 { --k: var(--tp-s3); } .trace-player .k-4 { --k: var(--tp-s4); }
+  .trace-player .tp-swatch { background: var(--k); }
+  .trace-player .tp-swatch.dashed { background: repeating-linear-gradient(90deg, var(--k) 0 4px, transparent 4px 6px); }
+  .trace-player svg.tp-plot { width: 100%; height: auto; display: block; touch-action: pan-y; cursor: ew-resize; }
+  .trace-player svg.tp-plot .surface { fill: var(--tp-surface); stroke: var(--tp-border); }
+  .trace-player svg.tp-plot .grid { stroke: var(--tp-grid); stroke-width: 1; }
+  .trace-player svg.tp-plot .axis { stroke: var(--tp-axis); stroke-width: 1; }
+  .trace-player svg.tp-plot .event { stroke: var(--tp-muted); stroke-width: 1; stroke-dasharray: 2 3; }
+  .trace-player svg.tp-plot .tick { fill: var(--tp-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .trace-player svg.tp-plot .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+  .trace-player svg.tp-plot .line.thin { stroke-width: 1.25; }
+  .trace-player svg.tp-plot .dashed { stroke-dasharray: 4 3; }
+  .trace-player svg.tp-plot .s-1 { stroke: var(--tp-s1); } .trace-player svg.tp-plot .s-2 { stroke: var(--tp-s2); }
+  .trace-player svg.tp-plot .s-3 { stroke: var(--tp-s3); } .trace-player svg.tp-plot .s-4 { stroke: var(--tp-s4); }
+  .trace-player svg.tp-plot .tp-cursor { stroke: var(--tp-ink); stroke-width: 1.25; }
+  .trace-player svg.tp-bars { cursor: default; }
+  .trace-player svg.tp-spectrogram image { image-rendering: pixelated; }
+  .trace-player svg.tp-spectrogram .tp-floor { fill: var(--tp-seq-0); }
+  .trace-player svg.tp-spectrogram .tp-veil { fill: var(--tp-surface); opacity: 0.6; }
+  .trace-player svg.tp-spectrogram .line { stroke-width: 1.5; }
+  .trace-player .tp-ramp { display: inline-block; width: 4.5rem; height: 0.55rem; border-radius: 2px; margin: 0 0.35rem; vertical-align: middle;
+    background: linear-gradient(90deg, var(--tp-seq-0), var(--tp-seq-1), var(--tp-seq-2), var(--tp-seq-3), var(--tp-seq-4), var(--tp-seq-5));
+    box-shadow: inset 0 0 0 1px var(--tp-border); }
+  .trace-player svg.tp-plot .f-1 { fill: var(--tp-s1); } .trace-player svg.tp-plot .f-3 { fill: var(--tp-s3); }
+  .trace-player svg.tp-plot .bar-marker { fill: none; stroke-width: 1.5; stroke-dasharray: 4 3; }
+  .trace-player svg.tp-plot .bar-label { fill: var(--tp-ink2); }
+  .trace-player svg.tp-plot .bar-value { fill: var(--tp-ink); }
+  .trace-player .tp-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; margin-top: 0.75rem; }
+  .trace-player .tp-play { width: 2.25rem; height: 2.25rem; display: grid; place-items: center; padding: 0; }
+  .trace-player .tp-play path { fill: currentColor; }
+  .trace-player .tp-scrub { flex: 1 1 10rem; min-width: 8rem; accent-color: var(--sl-color-accent); }
+  .trace-player .tp-time { font-variant-numeric: tabular-nums; color: var(--tp-ink2); white-space: nowrap; }
+  .trace-player .tp-speed { display: inline-flex; gap: 0.35rem; align-items: center; color: var(--tp-ink2); }
+  .trace-player select { font: inherit; color: var(--tp-ink); background: var(--tp-surface); border: 1px solid var(--tp-axis); border-radius: 4px; }
+  .trace-player .tp-keys { color: var(--tp-muted); font-size: 0.75rem; margin: 0.35rem 0 0.75rem; }
+  .trace-player .tp-desc { color: var(--tp-ink); margin-bottom: 0.5rem; }
+  .trace-player .tp-events { color: var(--tp-ink2); margin: 0 0 0.5rem; padding-left: 1.25rem; }
+  .trace-player .tp-events button { padding: 0 0.35rem; font-variant-numeric: tabular-nums; }
+  .trace-player .tp-checks { list-style: none; padding: 0; margin: 0 0 0.5rem; color: var(--tp-ink2); }
+  .trace-player .tp-checks b { color: var(--tp-ink); }
+  .trace-player .tp-badge { font-weight: 600; margin-right: 0.35rem; }
+  .trace-player .tp-checks .pass .tp-badge { color: var(--tp-good); }
+  .trace-player .tp-checks .fail .tp-badge, .trace-player .tp-checks .unexpected .tp-badge { color: var(--tp-bad); }
+  .trace-player .tp-checks .designed .tp-badge { color: var(--tp-ink); }
+  .trace-player .tp-live { border: 1px solid var(--tp-border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.75rem; }
+  .trace-player .tp-prompt { color: var(--tp-ink); margin-bottom: 0.5rem; }
+  .trace-player .tp-sliders { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 0.4rem 1rem; }
+  .trace-player .tp-slider { display: grid; grid-template-columns: 1fr auto; gap: 0 0.5rem; align-items: center; color: var(--tp-ink2); }
+  .trace-player .tp-slider input { grid-column: 1 / -1; width: 100%; accent-color: var(--sl-color-accent); }
+  .trace-player .tp-slider output { color: var(--tp-ink); font-variant-numeric: tabular-nums; }
+  .trace-player .tp-live-bar { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem 0.75rem; margin-top: 0.5rem; }
+  .trace-player .tp-live-bar button:disabled { opacity: 0.5; cursor: default; }
+  .trace-player .tp-live-status { color: var(--tp-ink2); flex: 1 1 16rem; }
+  .trace-player .tp-live-status.error { color: var(--tp-bad); }
+  .trace-player .tp-prov { overflow-wrap: anywhere; display: flex; flex-wrap: wrap; gap: 0.1rem 1rem; border-top: 1px solid var(--tp-border); padding-top: 0.5rem;
+    color: var(--tp-muted); font-size: 0.75rem; }
+  .trace-player .tp-prov a { color: var(--tp-ink2); }
+  .trace-player .tp-prov code { font-size: inherit; background: none; padding: 0; overflow-wrap: anywhere; }
+</style>
+
+<script>
+  import { initPlayers } from './player';
+  initPlayers();
+</script>

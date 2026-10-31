@@ -1,13 +1,15 @@
 name: Reflex CI
 
 on:
-  # The release PR touches only these two files and is opened by
+  # The release PR touches only these files (the version, in the manifest and
+  # the trace player's package.json) and is opened by
   # github-actions[bot], whose runs wait for approval; it merges at once, so
   # those runs would only expire and show red. The release is tested on main.
   pull_request:
     paths-ignore:
       - CHANGELOG.md
       - .release-please-manifest.json
+      - packages/trace-player/package.json
   push:
     branches: [main]
   workflow_dispatch:

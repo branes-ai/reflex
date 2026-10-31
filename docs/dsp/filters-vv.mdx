@@ -1,0 +1,196 @@
+---
+title: Gyro Filters V&V Plan
+description: Where the gyro filters (Biquad and RpmNotch) stand against the building block standard, the acceptance criteria, the animations that illustrate their checks, the evidence ledger, and the milestones that take them to grade A.
+sidebar:
+  label: "V&V Plan"
+  group: "Gyro Filters"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import notch from '@site/traces/filters/notch.json';
+import sweep from '@site/traces/filters/sweep.json';
+import delay from '@site/traces/filters/delay.json';
+
+This plan takes [the gyro filters](filters.md), `Biquad` and `RpmNotch`, to
+grade **A** under the [building block standard](../standards/building-blocks.md).
+It lists:
+- where the filters stand against each requirement;
+- the acceptance criteria;
+- the animations that illustrate the checks;
+- the evidence ledger;
+- a sequence of PRs.
+
+**Scope.** A filter's correctness is a property of its transfer function,
+so most of the verification is against analytic answers and needs no
+physical reference: the designs, the measured gains, the group delay, and
+an independent implementation. The open question is physical: whether a
+vehicle's vibration actually sits at the rotor harmonics, with amplitudes
+the notches can take out. Spectral tests on RP-1 flight logs answer it
+(the [control guide's](../control/quadrotor-control.md) F3), and they are
+validation (L1–L4).
+
+**Consumers.** racing-drone's B0 baseline: the gyro through `RpmNotch` and a
+low-pass `Biquad` per axis, at the gyro rate, ahead of the
+[cascade's](../control/cascade.mdx) rate loop. The consumer composes the
+chain and chooses its settings (racing-drone#16).
+
+## Where it stands
+
+Assessment on 2026-10-30, against commit `580f380`.
+
+| Req | Status | Evidence today / gap |
+|---|---|---|
+| S1 spec | ✅ | The transfer function, Direct Form I, each design's formula, the notch placement and blend, data models, invariants (I1–I2 for `Biquad`, I1–I4 for `RpmNotch`), and pre/postconditions on every operation, in `biquad.hpp` and `rpm_notch.hpp` |
+| S2 envelope | ✅ | Both headers state their validity envelope and non-goals: a linear section between retunes, no sensor model; vibration at integer harmonics, no FFT tracking, no handling of harmonics that alias |
+| S3 parameters | ✅ | `biquad_coefficients_valid` (the stability triangle), `design_frequency_valid`, and `rpm_notch_config_valid`, each tested at its boundaries |
+| S4 scalar types | ◐ | Both blocks run in double and float. `biquad.hpp` states the supported types and that 16-bit types are characterized, not supported; `rpm_notch.hpp` does not state its types |
+| S5 resource | ✅ | `noexcept`, no allocation, no exceptions, stated in the headers. Bounded operation counts: 9 per `Biquad::update`, `RpmNotch::apply` within its all-blended count, `update_rotor_speeds` within its all-in-range count (`tests/sdk/dsp_resource.cpp`) |
+| T1 unit | ✅ | Validators, steady-state start, fault holds for a non-finite input and an overflow, retuning that keeps the history, placement, clamping, fading and parking, telemetry faults (`tests/sdk/dsp_biquad.cpp`, `tests/sdk/dsp_rpm_notch.cpp`) |
+| T2 matrix | ✅ | GCC/Clang Debug+Release, MSVC |
+| T3 sanitizers | ❌ | No sanitizer preset |
+| T4 properties | ◐ | Full-range speed swings within one motor time constant, with random input, stay within the series ℓ1 gain bound. One seeded sequence; no generated designs or configurations |
+| T5 fuzzing | ❌ | — |
+| T6 coverage | ❌ | Not measured |
+| T7 mutation | ❌ | — |
+| V1 analytic | ✅ | Each design's DC gain and −3 dB point to 1e-12; the notch's zero and closed-form width; measured tone gains at 20 frequencies against `response()`; measured group delay against `group_delay()`; the closed form against the derivative of the phase |
+| V2 order | N/A | Defined in discrete time: the bilinear designs are exact at their prewarped frequency, and the recurrence is the specification |
+| V3 structure | ✅ | The invariants are asserted after every operation in Debug builds; a section started with `Biquad(c, x0)` starts at its steady state, with no transient |
+| V4 metamorphic | ❌ | Superposition, scaling, and time shift are not tested as relations, though the tracking test relies on linearity to separate the vibration |
+| V5 derivatives | N/A | No consumer linearizes the filters |
+| V6 code-to-code | ✅ | Designs and outputs match [stillwater-sc/mp-dsp](https://github.com/stillwater-sc/mp-dsp), an independent implementation, within the derived rounding bounds |
+| V7 stability | ✅ | Every design passes the stability triangle; a retuned section keeps its history without a jump; fast retuning stays within the ℓ1 bound |
+| C1–C5 | ◐ | `bench/filter_bench` gives ns per call on x86; the 16-bit depth is printed; the delay budget is computed. No generated datasheet |
+| D1–D3 | ◐ | Four trace scenarios in `tools/trace/scenarios/filters/`, regenerated and compared in CI (ANI-3); no scenario runner or monitor |
+| L5 | ✅ | The criteria below were written into [reflex#21](https://github.com/branes-ai/reflex/issues/21) before the tests ran, and are checked as stated |
+| L1–L4 | ❌ | No flight logs: the vibration spectrum is synthetic |
+| BB-I1–I6 | ◐ | The rate loop's phase margin with the chain in the loop, computed from `response()`. No closed-loop flight on a noisy, vibrating gyro |
+| R1 | ✅ | release-please semver |
+| R4 | ◐ | The committed traces pin four scenarios' numerical output, and CI fails when one changes; no golden test in `tests/` |
+| R2, R3 | ❌ | — |
+
+**Grade today: C.** S1, S3, S5, T1, and T2 are met, with
+`bench/filter_bench` as the benchmark. B needs S4, T3, T4, V4, and R4
+besides; S2, V1, V3, and V7 are met already, and V6, an A requirement, is
+met too.
+
+### Acceptance criteria
+
+Each tolerance is derived from a bound, never tuned to pass:
+- for the start-up transient, the impulse response's tail;
+- for rounding, a per-step bound carried through 1/A(z).
+
+| Criterion | Pass if |
+|---|---|
+| Butterworth and first-order designs | DC gain 1 and $1/\sqrt{2}$ at $f_c$ to 1e-12; Butterworth magnitude monotone |
+| Measured tone gains, 20 frequencies | Match `response()` within the derived bound |
+| Notch | Analytic gain at $f_0$ ≤ 1e-12; a tone at $f_0$ attenuated ≥ 60 dB (double), ≥ 40 dB (float); −3 dB edges where the closed form puts them |
+| Group delay | Measured from tone phases, matches `group_delay()` to 50 µs |
+| Delay budget | Rate-loop phase margin ≥ 45° on the nominal vehicle, with a Butterworth at 16× crossover and hover-speed RPM notches in the loop |
+| RPM tracking | Four rotors spread ±5 %, ramped to 1.5× hover in 1 s: vibration residual ≤ −30 dB, 5 Hz motion within 2 % |
+| Fast retuning | Full-range speed swings within one motor time constant keep the output within the series ℓ1 gain bound |
+| Code-to-code | Designs and outputs match mp-dsp within the derived bounds |
+
+The tests print what they measure. RPM tracking leaves −78.8 dB of the
+vibration in double and float. With a 2 % error in the rotor speeds it
+leaves −32 dB, inside the criterion. The phase margin is 53.0° with the
+filters, against 60.1° without them.
+
+mp-dsp is a test-only dependency. Its designs throw on invalid input and do
+not build with `-fno-exceptions`
+([mp-dsp#217](https://github.com/stillwater-sc/mp-dsp/issues/217)), so the
+flight path keeps reflex's own.
+
+## Animations
+
+These animations illustrate three of the criteria. Each plays a trace from
+a scenario in `tools/trace/scenarios/filters/`, and each scenario computes
+the check shown under its player. They are not the evidence for the
+requirement (ANI-4): the tests are, and the status table follows them. The
+[explainer](filters-explainer.mdx) has the same scenarios with more
+context, and a widget that reruns the sweep at other settings.
+
+### The notch's width (BB-V1)
+
+The closed form puts the −3 dB edges of `notch(f0, q, fs)` at a width of
+(f_s/π)·atan(sin ω₀ / 2q). The unit test measures steady-state tone gains at
+the edges. The scenario measures the width from a sweep.
+
+<TracePlayer
+  trace={notch}
+  title="Is the notch as wide as its closed form says?"
+  description="A notch at 264 Hz with q = 5, at 8 kHz, filters a unit tone rising from 50 Hz to 650 Hz over 4 s. The gain is measured over each 25 ms as the RMS of the output over the RMS of the input, beside the design's response() at the tone's mean frequency. Its −3 dB crossings are at 239.4 Hz and 291.3 Hz, a width of 52.0 Hz. Pass criterion: the measured width within 3.75 Hz of the closed form's 52.5 Hz, the distance the tone moves in one 25 ms measurement. It is 0.47 Hz off."
+  plots={[
+    { channel: 'gain_db', title: 'Gain', labels: ['measured', 'response()'], colors: [1, 4] },
+    { channel: 'tone_hz', title: 'Tone frequency', labels: ['tone'], colors: [3] },
+  ]}
+/>
+
+### Tracking through a throttle sweep (BB-I2)
+
+The tracking criterion, flown over a whole throttle range. The test ramps
+the rotors from hover to 1.5 times hover; the scenario sweeps them from
+idle to 90 % of their maximum speed.
+
+<TracePlayer
+  trace={sweep}
+  title="Do the tracked notches leave less than −30 dB of the vibration?"
+  description="The gyro sees a 5 Hz roll rate, the first three harmonics of four rotors spread ±5 %, and sensor noise, at 8 kHz, while the rotors sweep from idle (fundamentals near 70 Hz) to 90 % of their maximum speed (500–552 Hz) and hold. The tracked notches take the harmonics out of the filtered spectrogram everywhere except below 150 Hz, where the fundamentals' notches are off or fading in. Pass criteria: with every notch on, the vibration left at most −30 dB, and the 5 Hz motion within 2 % of its amplitude. They are −70.7 dB and 0.03 %."
+  plots={[
+    { kind: 'spectrogram', channel: 'filtered_spectrum', binHz: 'spectrum_bin_hz', title: 'After the tracked notches',
+      overlay: { channel: 'notch_hz', weights: 'notch_weight', label: 'notch centres (where on)' } },
+    { channel: 'vibration_db', title: 'Vibration left, per 25 ms', components: [1], labels: ['tracked notches'], colors: [1],
+      series: [{ channel: 'vibration_limit', label: 'criterion', color: 4, dashed: true }] },
+  ]}
+/>
+
+### The delay budget (BB-C2)
+
+The criterion is analytic: the phase margin of the rate loop's transfer
+function with the chain's `response()` in it. The scenario computes the
+same margin and shows the chain's step response in the time domain.
+
+<TracePlayer
+  trace={delay}
+  title="Does the gyro chain leave the rate loop 45° of phase margin?"
+  description="A 1 rad/s roll-rate step at 5 ms through the twelve hover-speed notches, a 101 Hz Butterworth low-pass, and the two in series, at 8 kHz. The chain passes on half the step 3.4 ms after it. Pass criterion: the rate loop's phase margin with the chain in the loop at least 45°. It is 53.0°: the chain lags 7.1° at the 6.3 Hz crossover, 5.1° from the low-pass and 2.0° from the notches."
+  plots={[
+    { channel: 'roll_rate', title: 'Roll rate', labels: ['true', 'notches', 'low-pass', 'chain'], colors: [4, 2, 3, 1] },
+  ]}
+/>
+
+## Evidence ledger
+
+| Claim | Evidence | Harness | Gate |
+|---|---|---|---|
+| Each design meets its specification | DC and −3 dB gains; the notch's zero and width; monotone Butterworth | `tests/sdk/dsp_biquad` | PR |
+| The recurrence realizes the design | Tone gains at 20 frequencies and group delay against the analysis functions | `tests/sdk/dsp_biquad` | PR |
+| The analysis functions are right | The group delay's closed form against the phase derivative | `tests/sdk/dsp_biquad` | PR |
+| An independent implementation agrees | Designs and outputs against mp-dsp | `tests/sdk/dsp_biquad` | PR |
+| Faults do not corrupt the filters | Non-finite inputs, overflow, bad telemetry | `tests/sdk/dsp_biquad`, `tests/sdk/dsp_rpm_notch` | PR |
+| The notches track the rotors | The tracking criterion; the throttle sweep | `tests/sdk/dsp_rpm_notch`, `filters/sweep` | PR |
+| Retuning keeps the output bounded | Fast speed swings within the ℓ1 bound | `tests/sdk/dsp_rpm_notch` | PR |
+| The chain fits the delay budget | Analytic phase margin with the filters in the loop | `tests/sdk/dsp_rpm_notch`, `filters/delay` | PR |
+| Bounded operation counts | Counted-type tests | `tests/sdk/dsp_resource` | PR |
+| The cost per call | Benchmark | `bench/filter_bench` | — |
+| The traces match the code | Regenerated and compared under `regen` | `Docs traces` CI job | PR |
+| The live widget runs the same code | Wasm against native under `wasm`, at the defaults | `npm run wasm-agree` | PR |
+| Planned (M2): superposition, scaling, and time shift hold | Metamorphic tests | Planned: `tests/verification/dsp_metamorphic` | Planned: PR |
+
+The last row is planned.
+
+## Milestones
+
+| # | PR scope | Requirements | Grade after |
+|---|---|---|---|
+| M1 | Scalar types in `rpm_notch.hpp`, with the minimum precision (float) and why 16-bit types fail; sanitizer preset | S4, T3 | — |
+| M2 | Metamorphic tests: superposition and scaling, a time shift that shifts the output, permuted axes that permute it; property tests: generated valid designs are stable with the specified gains, and generated speed sequences stay within the ℓ1 bound; golden traces in `tests/` | V4, T4, R4 | **B** |
+| M3 | Fuzz targets for `update()`, `apply()`, and `update_rotor_speeds()`: any input keeps the invariants and a finite output; coverage report | T5, T6 | B |
+| M4 | Datasheet: magnitude, phase, and group delay of each design, the delay budget against q and the low-pass cutoff, the cost per type and compiler; scenario runner and monitor | C1–C4, D1–D3 | B |
+| M5 | The filters in the `sim/` scenario suite, between a vibrating, noisy gyro model and the cascade's rate loop; lockstep and real-time timing | BB-I1, BB-I2, BB-I4 | **A** |
+| M6 | RP-1 flight logs: spectra that confirm the harmonics (F3), the residual measured on logged gyro data, the ESC speed error; processor in the loop; racing-drone contract tests | L1–L4, BB-I5, R3 | A+ |
+
+M2 matters most for B: the metamorphic relations hold for any linear
+filter, so they check the recurrence without reference values. M6 matters
+most overall, because it is the only step that tests the assumption the
+RPM notch rests on. M5 shares the `sim/` harness with the
+[cascade's M5](../control/cascade-vv.mdx#milestones).

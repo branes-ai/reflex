@@ -1,0 +1,203 @@
+---
+title: Gyro Filters Deployment
+description: Deployment guide for the gyro filters. Covers choosing the gyro rate, what a 1 kHz gyro cannot filter, the rotor-speed telemetry, choosing q and the low-throttle floor, the low-pass and the delay budget, wiring the chain, cost, and the consumer contract.
+sidebar:
+  label: "Deployment Guide"
+  group: "Gyro Filters"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import lowRate from '@site/traces/filters/low_rate.json';
+
+This guide is for integrators who put [the gyro filters](filters.md)
+between an IMU and the [cascade's](../control/cascade.mdx) rate loop. It
+covers what to set, what the filters need from the rest of the stack, and
+where they stop working. The [developer guide](filters.md) has the designs
+and the API.
+
+## Parameters
+
+`RpmNotchConfig<T>` is a plain aggregate. Check it with
+`rpm_notch_config_valid<T, MaxHarmonics>()` before you build an `RpmNotch`.
+The defaults are common flight-controller settings for a 5-inch-class
+quadrotor:
+
+| Field | Default | Unit | Meaning |
+|---|---|---|---|
+| `sample_rate` | 1000 | Hz | The rate `apply()` is called at: set it to your gyro rate |
+| `harmonics` | 3 | | Harmonics per rotor, 1 … `MaxHarmonics` (a template parameter, default 3) |
+| `q` | 5 | | Quality factor of every notch: the −3 dB width is about f/q |
+| `min_hz` | 100 | Hz | Lowest centre; a lower harmonic's notch is off |
+| `fade_hz` | 50 | Hz | The notch fades in over [min_hz, min_hz + fade_hz] |
+
+The low-pass is a `Biquad` per axis, from `butterworth_lowpass(fc, fs)` or
+`first_order_lowpass(fc, fs)`. Its cutoff is the main entry in the delay
+budget ([below](#the-low-pass-and-the-delay-budget)).
+
+## Choosing the gyro rate
+
+A notch can sit no higher than 0.45·f_s. The sampled signal holds nothing
+above f_s/2: a harmonic above it aliases, appearing at a lower frequency
+where no notch follows it. So the gyro rate is set by the highest harmonic
+you need to notch:
+
+$$
+f_s \ge \frac{h_{\max}\,\omega_{\max}}{2\pi \cdot 0.45}
+$$
+
+For RP-1, three harmonics at the maximum rotor speed (584 Hz) put the third
+harmonic at 1753 Hz, so the gyro must run at 3.9 kHz or more. The
+explainer's sweep runs at 8 kHz. `sample_rate`'s default of 1 kHz suits a
+larger, slower-turning vehicle, not RP-1. A gyro that runs faster than the
+rate loop is filtered at the gyro rate, and the rate loop takes every
+n-th filtered sample. That decimation aliases whatever is left above the
+rate loop's Nyquist frequency, half its rate, into the control band: a
+95 Hz line, below `min_hz` and so not notched, appears at 5 Hz in a
+100 Hz rate loop. Check the chain's attenuation against the rate loop's
+Nyquist frequency, not the gyro's. The 101 Hz low-pass of the
+[delay budget](#the-low-pass-and-the-delay-budget) is sized for phase,
+not as an anti-alias filter for a given decimation.
+
+<TracePlayer
+  trace={lowRate}
+  title="What can the notches do at a 1 kHz gyro rate?"
+  description="The explainer's throttle sweep with RpmNotchConfig's default 1 kHz rate: notches can sit no higher than 450 Hz, and the spectrum ends at 500 Hz. The fastest rotor's third harmonic passes 450 Hz at 0.98 s and its notch parks there, off; the second harmonics follow at 1.45 s, and the fastest fundamental at 2.86 s. Above 500 Hz the harmonics alias: the third harmonics fold down through the spectrum, and at the top of the sweep the second harmonics, at 1.00 to 1.10 kHz, appear between 0 and 104 Hz, inside the rate loop's band, where no filter can tell them from motion. The notches still remove what sits below 450 Hz, but most of the vibration is above it. Pass criterion, the explainer's: with every fundamental's notch on, the vibration left at most −30 dB. It is −1.1 dB, and the check fails: this gyro rate is outside the envelope for RP-1."
+  plots={[
+    { kind: 'spectrogram', channel: 'raw_spectrum', binHz: 'spectrum_bin_hz', title: 'Raw gyro, sampled at 1 kHz' },
+    { kind: 'spectrogram', channel: 'filtered_spectrum', binHz: 'spectrum_bin_hz', title: 'After the tracked notches',
+      overlay: { channel: 'notch_hz', weights: 'notch_weight', label: 'notch centres (where on)' } },
+    { channel: 'vibration_db', title: 'Vibration left, per 25 ms', components: [1], labels: ['tracked notches'], colors: [1],
+      series: [{ channel: 'vibration_limit', label: 'criterion', color: 4, dashed: true }] },
+  ]}
+/>
+
+The filters cannot fix aliasing after the fact. Once a harmonic has folded
+into the control band, it is indistinguishable from motion. Choose the IMU
+rate, and its anti-alias filter, against the rotor speeds first (the
+[control guide's](../control/quadrotor-control.md) F3).
+
+## The rotor speeds
+
+`update_rotor_speeds()` takes each rotor's mechanical speed in rad/s. On
+hardware it comes from the ESC telemetry. Bidirectional DShot and ESC
+telemetry report electrical RPM: divide by the motor's pole pairs, then
+convert, ω = 2π·RPM/60. Forgetting the division puts every notch at the
+pole-pair count times the right frequency, and a wrong count scales every
+notch by the ratio of the counts: either way the notches miss.
+
+- **Accuracy.** The notches are only as good as the speeds. With q = 5, a
+  2 % error leaves −32 dB of the vibration and a 5 % error −19 to −21 dB
+  (the explainer's [sweep widget](filters-explainer.mdx#2-notches-that-follow-the-rotors)
+  reruns it at other errors). Measure the telemetry against a tachometer
+  or the gyro spectrum before you rely on it.
+- **Faults.** A non-finite or negative speed is a telemetry fault: that
+  rotor keeps its previous notches. A speed that stops arriving is not
+  detected: the notches stay where the last speed put them. Staleness is
+  the caller's to detect.
+- **Rate.** Call `update_rotor_speeds()` when new telemetry arrives; the
+  notches hold their centres in between. It designs every notch on each
+  call, which costs more than filtering ([cost](#cost)), so there is no
+  gain in calling it faster than the telemetry.
+
+## Choosing q
+
+A wider notch (smaller q) tolerates a larger speed error, and costs more
+phase lag at the rate loop's crossover. From the explainer's sweep (four
+rotors spread ±5 %, three harmonics each, 8 kHz) and the rate-loop margin
+of the [delay budget](filters-vv.mdx#acceptance-criteria):
+
+| q | Vibration left, exact speeds | With a 2 % error | With a 5 % error | Twelve notches' lag at 6.3 Hz |
+|---|---|---|---|---|
+| 2 | −96 dB | −60 dB | −44 dB | 5.0° |
+| 5 | −71 dB | −32 dB | −19 dB | 2.0° |
+| 10 | −54 dB | −18 dB | −10 dB | 1.0° |
+
+Choose the largest q that your telemetry's accuracy allows. With good
+telemetry the default, q = 5, leaves the vibration 30 dB down or more. With
+telemetry you trust only to 5 %, q = 2 is the better choice, at 3° more
+lag. The lag grows with the number of notches, so a vehicle with fewer
+rotors or harmonics can afford a smaller q.
+
+## The low-throttle floor
+
+A notch removes a band, not a line, and costs phase below its centre. A
+notch near the rate loop's crossover would cost the loop more phase than
+the vibration there is worth, so `min_hz` keeps every notch above a floor.
+Keep `min_hz` at least ten times above the rate loop's crossover: the
+default 100 Hz is 16 times RP-1's 6.3 Hz. A harmonic below it has no
+notch, and only the low-pass filters it; the same rotor's higher
+harmonics keep their notches while they are above the floor. `fade_hz` makes each notch fade in over a band instead of
+switching on with a jump; 0 switches each notch on at `min_hz`.
+
+## The low-pass and the delay budget
+
+Every filter delays the signal it keeps, and the rate loop pays for that
+delay in phase margin. The delay-budget test puts RP-1's chain in the rate
+loop: a Butterworth low-pass at 16 times the crossover (101 Hz), and the
+twelve notches at hover speed. The margin is 53.0°, down from 60.1° with no
+filters: 5.1° from the low-pass and 2.0° from the notches. The cascade's
+gains assume at least 45°, so the chain leaves about 8° for the rest of the
+delay: the IMU's own filter, the ESC, and the scheduling. Measure those on
+your stack.
+
+A lower cutoff removes more noise and costs more phase: the Butterworth's
+lag at crossover is about √2·f/f_c radians, so halving the cutoff doubles
+it. A first-order low-pass at the same cutoff lags about 0.7 times as
+much (f/f_c radians) and removes less.
+
+## Wiring
+
+Once per gyro sample, in this order:
+
+```cpp
+if (telemetry.fresh()) {
+    rpm.update_rotor_speeds(telemetry.rotor_speeds());  // rad/s, mechanical
+}
+Vec3<float> g = rpm.apply(imu.gyro());  // rad/s, body frame
+for (std::size_t i = 0; i < 3; ++i) {
+    g(i) = gyro_lpf[i].update(g(i));
+}
+// Every n-th sample, the rate loop: cascade.update(state_with(g), setpoint, dt).
+```
+
+Start each `Biquad` at the current gyro reading, `Biquad(c, x0)`, when the
+filters start on a live signal: it starts at that steady state, with no
+transient. `RpmNotch` starts with its notches off and passes the gyro
+through until the first rotor speeds arrive.
+
+## Cost
+
+Per call on x86 (`bench/filter_bench`, GCC 15.2 Release, i7-12700K):
+
+| Call | float | double |
+|---|---|---|
+| `Biquad::update` | 1.9 ns | 1.9 ns |
+| `RpmNotch::apply`, 36 sections | 62 to 67 ns | 61 ns |
+| `RpmNotch::update_rotor_speeds`, 12 designs | 100 ns | 370 ns |
+
+At 8 kHz with a retune every sample, the chain costs about 1.4 ms per
+second in float, 0.14 % of this processor. Each `update_rotor_speeds()`
+designs twelve notches, with a sine and a cosine each. The operation
+counts are bounded (`tests/sdk/dsp_resource.cpp`): 9 per `Biquad::update`,
+`apply()` within its all-blended count, `update_rotor_speeds()` within its
+all-in-range count. A flight controller is much slower than this processor:
+measure on it before budgeting.
+
+## Scalar types
+
+Both blocks are tested in double and float. They need `+ − × ÷ <`, `sin`,
+`cos`, `abs`, `isfinite`, and construction from double. 16-bit types
+(`posit<16,1>`, IEEE binary16) are not supported: a notch's coefficients
+do not survive rounding to them, and the depth they reach is printed by the
+`16-bit types` test for reference.
+
+## Consumer contract
+
+| | |
+|---|---|
+| Preconditions | Valid designs (0 < f < f_s/2, q > 0), a valid `RpmNotchConfig`; `sample_rate` equal to the rate `apply()` is called at |
+| Postconditions | A finite output on every call; each notch within [min_hz, 0.45·f_s] with weight in [0, 1] |
+| Faults | A non-finite sample or an overflow holds the last output; a non-finite or negative rotor speed holds that rotor's notches. None is reported |
+| State | Each section's last two inputs and outputs; each notch's centre and weight; the last output per axis. `reset()` clears the history and keeps the notches |
+| Resources | No allocation, no exceptions, `noexcept`; bounded operation counts |
+| Not provided | Choosing the chain per vehicle (racing-drone#16), FFT-tracked dynamic notches, anti-alias filtering, staleness detection of the telemetry, harmonics above f_s/2 |

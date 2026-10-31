@@ -1,0 +1,189 @@
+---
+title: How the Gyro Filters Work
+description: An explainer for reflex's gyro filters, from what one notch does to a tone, through RPM-tracked notches following the rotors in a throttle sweep, shown as spectrograms, to the delay every filter costs the rate loop, with a live widget that runs the filters' own code.
+sidebar:
+  label: "Explainer"
+  group: "Gyro Filters"
+---
+
+import TracePlayer from '@site/components/trace/TracePlayer.astro';
+import notch from '@site/traces/filters/notch.json';
+import sweep from '@site/traces/filters/sweep.json';
+import delay from '@site/traces/filters/delay.json';
+
+The rate loop flies the vehicle from the gyro, and the gyro is bolted to a
+frame that four spinning rotors shake. It measures the vehicle's turning
+and the vibration together. The vibration is loud and narrow: it sits at
+each rotor's rotation frequency and at whole multiples of it, the
+harmonics. If it reaches the rate loop, the loop treats the vibration as
+turning and drives the motors against it. The motors run hot, the
+vibration gets worse, and in the worst case the loop chases it into an
+oscillation.
+
+[The filters](filters.md) take the vibration out before the rate loop sees
+it. This page builds up how, in four steps:
+1. one notch;
+2. notches that follow the rotors;
+3. what happens at low throttle;
+4. what all filtering costs.
+
+Every animation plays a trace recorded from the filters' own C++, and the
+scenario is linked under each player. Its spectrograms are computed in
+that C++ too. The throttle-sweep widget reruns that C++, compiled to
+WebAssembly, in your browser. The controls and keys are described on the
+[Trace Player](../standards/trace-player.mdx#player-behaviour) page.
+
+## Where the vibration sits
+
+| RP-1 rotors | Rotor speed | Fundamental | 2nd harmonic | 3rd harmonic |
+|---|---|---|---|---|
+| Idle (in these scenarios) | 440 rad/s | 70 Hz | 140 Hz | 210 Hz |
+| Hover | 1660 rad/s | 264 Hz | 528 Hz | 792 Hz |
+| Maximum | 3672 rad/s | 584 Hz | 1168 Hz | 1753 Hz |
+
+The vehicle's own motion is slow by comparison: the rate loop's crossover
+is at 6.3 Hz. Between the two lies a gap of more than a decade, and the
+filters work in that gap. The scenarios' gyro signal has three parts:
+- a 5 Hz roll rate of 0.5 rad/s;
+- the first three harmonics of four rotors spread ±5 % around one
+  another, 0.1, 0.05, and 0.03 rad/s at hover and growing with the square
+  of the speed;
+- 0.002 rad/s of sensor noise.
+
+These amplitudes are illustrative; flight logs set them for a real
+vehicle.
+
+A spectrogram shows the signal as frequency against time: each column is
+the spectrum of the last 32 ms, and the colour is the level in dB, from
+−60 dB (pale) to 0 dB (dark). A steady tone is a horizontal line, and a
+rotor speeding up is a line that climbs. The part after the cursor is
+dimmed, so the spectrogram fills in as the trace plays.
+
+## 1. A notch removes one frequency
+
+A notch is a filter with a gain of exactly zero at one frequency, f₀, and
+close to one everywhere else. How wide the dip is depends on the quality
+factor q: the band where the gain is below −3 dB (half the power) is about
+f₀/q wide. Here f₀ is RP-1's hover fundamental, 264 Hz, and q = 5.
+
+*Before you play:* a tone sweeps from 50 Hz to 650 Hz through the notch.
+Over what range of frequencies does the notch take the tone away?
+
+<TracePlayer
+  trace={notch}
+  title="What does one notch do to a tone that sweeps through it?"
+  description="A single notch at 264 Hz with q = 5, at the 8 kHz gyro rate, filters a unit tone that rises from 50 Hz to 650 Hz over 4 s. In the output spectrogram the tone is a rising line, which thins where it crosses the notch (orange). The measured gain, the output's RMS over the input's across each 25 ms, follows the design's own response() all the way. It falls below −3 dB between 239 Hz and 291 Hz, a band 52 Hz wide, and to −26 dB in the 25 ms that straddle 264 Hz, where the gain is zero."
+  plots={[
+    { kind: 'spectrogram', channel: 'output_spectrum', binHz: 'spectrum_bin_hz', title: 'Output spectrogram',
+      overlay: { channel: 'notch_hz', label: 'notch centre' } },
+    { channel: 'gain_db', title: 'Gain', labels: ['measured', 'response()'], colors: [1, 4] },
+    { channel: 'tone_hz', title: 'Tone frequency', labels: ['tone'], colors: [3] },
+  ]}
+/>
+
+The −3 dB band is 52 Hz wide, as the closed form for this design predicts,
+(f_s/π)·atan(sin ω₀ / 2q) = 52.5 Hz. The dip is narrow: at 6.3 Hz, where
+the rate loop works, the notch's gain is 1 to within 0.01 %. A notch costs
+the rate loop little, as long as it sits where the vibration is.
+
+## 2. Notches that follow the rotors
+
+A fixed notch only helps while the rotor runs at the speed it was set for.
+The rotors change speed with every throttle movement and every correction,
+so `RpmNotch` moves its notches with them. Each tick it is given the four
+rotor speeds, from the ESC telemetry on hardware or the model in
+simulation. It places a notch at each of the first three harmonics of each
+rotor, twelve in all, and runs the gyro through all of them in series.
+
+*Before you play:* the throttle sweeps from idle to 90 % of the rotors'
+maximum speed. The top spectrogram is the raw gyro. In the bottom one,
+filtered by the tracked notches, the orange lines are the notch centres.
+What is left of the vibration, and where?
+
+<TracePlayer
+  trace={sweep}
+  live="filters_sweep"
+  prompt="give the notches a rotor speed error of 2 %, then 5 %. How much vibration gets through? Then widen the notches to q = 2 and try 5 % again."
+  title="Do the notches keep up with a throttle sweep?"
+  description="The gyro sees a 5 Hz roll rate, the first three harmonics of four rotors spread ±5 %, and sensor noise, at 8 kHz. The rotors idle with fundamentals near 70 Hz, sweep to 500–552 Hz between 0.5 s and 3.5 s, and hold. In the raw spectrogram twelve lines climb, the third harmonics to 1.6 kHz. In the filtered one they are gone wherever the notches sit, except at low throttle: below 100 Hz the fundamentals' notches are off, and between 100 Hz and 150 Hz they fade in. Once all twelve are on, the tracked notches leave −41 dB to −78 dB of the vibration in each 25 ms, and −71 dB overall; when the speeds hold still at the top, the notches settle and it falls below −100 dB. Notches fixed at the hover speeds reach −35 dB only while the rotors pass hover, near 1.8 s. Pass criteria: the vibration left by the tracked notches with all twelve on at most −30 dB, and the 5 Hz motion within 2 % of its amplitude."
+  plots={[
+    { kind: 'spectrogram', channel: 'raw_spectrum', binHz: 'spectrum_bin_hz', title: 'Raw gyro' },
+    { kind: 'spectrogram', channel: 'filtered_spectrum', binHz: 'spectrum_bin_hz', title: 'After the tracked notches',
+      overlay: { channel: 'notch_hz', weights: 'notch_weight', label: 'notch centres (where on)' } },
+    { channel: 'vibration_db', title: 'Vibration left, per 25 ms', labels: ['notches fixed at hover', 'tracked notches'], colors: [2, 1],
+      series: [{ channel: 'vibration_limit', label: 'criterion', color: 4, dashed: true }] },
+  ]}
+/>
+
+The tracked notches stay on the harmonics as the rotors speed up, and the
+vibration they leave is 40 to 80 dB down: a hundredth to a ten-thousandth
+of its amplitude. While the speeds change, each notch trails its harmonic
+slightly; once they hold still, the notches settle and the vibration left
+falls below −100 dB. A bank of notches fixed at hover does well only while
+the rotors are near hover. Below and above it, it misses the lines and
+leaves −10 dB or more.
+
+The notches can only be as good as the speeds they are given. With a 2 %
+speed error, the q = 5 notches sit a tenth of their −3 dB width off the
+harmonics, and the vibration left rises from −71 dB to −32 dB, just
+inside the −30 dB criterion. At 5 % it is −19 dB, and the criterion fails.
+Wider notches tolerate more: at q = 2 a 5 % error still leaves only
+−44 dB, at a cost that [section 4](#4-the-price-delay) shows.
+
+## 3. Staying out of the control band
+
+In the first half second the fundamentals, at 66 to 74 Hz, pass through
+the filtered spectrogram untouched. That is deliberate. A notch removes a
+band, not a line, and a notch at 70 Hz with q = 5 would cut into the
+frequencies the rate loop works at, and add phase lag there. So
+`RpmNotch` has a floor, `min_hz` = 100 Hz by default. A notch whose
+harmonic is below it sits at `min_hz` with weight 0, and the stage passes
+its input through unchanged. Between `min_hz` and `min_hz + fade_hz`
+(150 Hz) the notch fades in linearly, so that it does not switch on with a
+jump.
+
+Each notch's output is blended as y ← y + w·(N(y) − y), with weight w
+from 0 to 1. Every notch keeps filtering even at w = 0, so its history is
+current when it fades back in. The second and third harmonics are above
+100 Hz from the start, so their notches are on through the idle.
+
+## 4. The price: delay
+
+A filter cannot remove a frequency without delaying the frequencies it
+keeps, and delay is what the rate loop can least afford: it costs phase
+margin, the loop's distance from oscillating. So the gyro chain is part of
+the rate loop's design. Here it is the chain of the
+[delay-budget test](filters-vv.mdx#acceptance-criteria):
+- a 2nd-order Butterworth low-pass at 101 Hz, 16 times the crossover, for
+  the broadband noise;
+- the twelve RPM notches at the hover speeds.
+
+*Before you play:* a 1 rad/s roll-rate step reaches the gyro at 5 ms. How
+long does each filter take to pass on half of it?
+
+<TracePlayer
+  trace={delay}
+  title="How long do the gyro filters delay a change in roll rate?"
+  description="A 1 rad/s roll-rate step at 5 ms, at the 8 kHz gyro rate, with no vibration added, through three filters: the twelve RPM notches at hover, a 101 Hz Butterworth low-pass, and the two in series. The notches pass the step's edge at once but ring at the rotor harmonics, up to 1.24 rad/s, because they have taken those frequencies out of the step. The low-pass reaches half the step 2.25 ms after it, with 4 % overshoot. The whole chain takes 3.4 ms, and its output is smooth. Pass criterion: the rate loop's phase margin with the chain in the loop, computed from the filters' response(), at least 45°. It is 53.0°, down from 60.1° with no filters."
+  plots={[
+    { channel: 'roll_rate', title: 'Roll rate', labels: ['true', 'notches', 'low-pass', 'chain'], colors: [4, 2, 3, 1] },
+  ]}
+/>
+
+At the crossover, 6.3 Hz, the chain lags by 7.1°: 5.1° from the low-pass
+and 2.0° from the twelve notches. The rate loop's phase margin falls from
+60.1° to 53.0°, inside the 45° budget with 8° to spare. That spare is what
+a deployment spends on the rest of its delay: the IMU, the ESC, and the
+loop's own scheduling. Widening the notches to q = 2 costs 5.0° instead
+of 2.0°. The [deployment guide](filters-deployment.mdx#choosing-q) works
+through the trade.
+
+## Where to go next
+
+- The [developer guide](filters.md) has the designs, the fault handling,
+  and the contracts.
+- The [V&V plan](filters-vv.mdx) has the acceptance criteria and what
+  the tests show.
+- The [deployment guide](filters-deployment.mdx) covers the gyro rate,
+  the telemetry, choosing q and the floor, and what happens at a 1 kHz
+  gyro.

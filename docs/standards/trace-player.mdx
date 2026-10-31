@@ -107,6 +107,27 @@ the whole trace so the axis holds still.
 The [mixer explainer](../control/mixer-explainer.mdx) uses one for the rotor
 thrusts.
 
+An entry with `kind: 'spectrogram'` is a spectrogram: frequency against
+time, one column per sample and one row per frequency bin, coloured by
+level on a sequential ramp in each theme. The trace records the spectrum,
+computed by the scenario's C++, as linear amplitudes in the signal's unit,
+one vector per sample; the player converts them to dB for the colour and
+paints nothing it computes (ANI-1). Recording amplitudes rather than dB
+keeps the `regen` and `wasm` comparisons absolute where the spectrum is
+near zero. The columns after the cursor are dimmed, so the spectrogram
+fills in as the trace plays, and a screen reader can read the strongest
+peaks at the cursor.
+
+| Field | Meaning |
+|---|---|
+| `channel`, `title` | The spectrum channel, the amplitude in bin b at b·`binHz`, and the panel title |
+| `binHz` | A scalar channel in Hz holding the bin spacing, the same at every sample |
+| `range` | The colour range in dB relative to one unit of the channel (default `[-60, 0]`) |
+| `overlay` | `{ channel, weights?, label }`: lines over the image, one per component of a channel in Hz, drawn only where the `weights` channel (same width) is above 0 |
+
+The [gyro filters explainer](../dsp/filters-explainer.mdx) uses them for a
+throttle sweep, with the notch centres as the overlay.
+
 ## What CI checks
 
 The `Docs traces` job in `ci.yml` runs on every pull request:

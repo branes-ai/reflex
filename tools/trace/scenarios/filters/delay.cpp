@@ -24,6 +24,14 @@
 #include <cstddef>
 #include <cstdio>
 
+namespace {
+
+// Command delay in the loop model [s]. At file scope: MSVC does not count a
+// constexpr local used only inside a lambda as referenced (C4189).
+constexpr double kDelay = 1e-3;
+
+}  // namespace
+
 int main() {
     namespace trace = branes::reflex::trace;
     namespace qt = branes::reflex::trace::quadrotor;
@@ -37,7 +45,6 @@ int main() {
         constexpr double kFs = ft::kGyroRate;
         constexpr double kStepAt = 0.005;
         constexpr double kDuration = 0.040;
-        constexpr double kDelay = 1e-3;  // command delay in the loop model [s]
         const model::QuadrotorParams<double> p;
         const auto gains = control::cascade_config_from(p).rate.axis[0];
         const double tau = p.motor_time_constant;

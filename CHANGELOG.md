@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/branes-ai/reflex/compare/v0.8.0...v0.9.0) (2026-10-31)
+
+
+### Features
+
+* **docs:** the trace player as a shared package (animation plan p5) ([#65](https://github.com/branes-ai/reflex/issues/65)) ([05a5e1d](https://github.com/branes-ai/reflex/commit/05a5e1d5c1b9711c2a0d5dca4fd26d6d66d619b3))
+
 ## [0.8.0](https://github.com/branes-ai/reflex/compare/v0.7.4...v0.8.0) (2026-10-31)
 
 

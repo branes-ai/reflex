@@ -20,9 +20,12 @@ reflex is MIT-licensed (see the top-level [`LICENSE`](../../LICENSE)), like the 
 | Emscripten (emsdk) | MIT **or** University of Illinois/NCSA | Yes | Build tool for the WebAssembly module the docs site runs | None for the tool |
 | Emscripten's runtime libraries: musl, LLVM libc++, libc++abi and compiler-rt | MIT; Apache-2.0 WITH LLVM-exception | Yes | Linked into the WebAssembly module | The LLVM exception waives the notice requirement for compiled code; the musl notice goes with a distribution of the module |
 
-The site's trace player (`packages/trace-player`) is reflex's own code, MIT-licensed.
+| ajv | MIT | Yes | Runtime dependency of the trace player (`packages/trace-player`), released with reflex: validates traces | Its notice goes with a distribution of the package |
+| three | MIT | Yes | Runtime dependency of the trace player: the 3-D view | Its notice goes with a distribution of the package |
 
-No GPL, LGPL, AGPL, MPL or SSPL dependency is accepted. [ADR-0002](0002-no-gpl-clean-room-policy.md) is the wider policy: no GPL code for any purpose, including the flight stacks most often used as references.
+The trace player itself is reflex's own code, MIT-licensed, and other repos' sites use it, so its dependencies are part of what reflex ships.
+
+No GPL, LGPL, AGPL, MPL or SSPL dependency is accepted. [ADR-0002](0002-no-gpl-clean-room-policy.md) is the wider policy: no GPL code for any purpose, including the flight stacks most often used as references. An exception would need an ADR of its own that supersedes this one.
 
 ## Decision
 
@@ -33,5 +36,5 @@ No GPL, LGPL, AGPL, MPL or SSPL dependency is accepted. [ADR-0002](0002-no-gpl-c
 ## Consequences
 
 - This table answers a partner's license review: what reflex links, and under which terms.
-- **Scope.** This covers what reflex ships, the code that builds it and the tests, the WebAssembly module included. The docs site's toolchain is not part of it. Astro brings in sharp and libvips (LGPL-3.0) to process images, but they only build the documentation, in CI and on developers' machines.
-- **Current state:** reflex's dependencies are those in the table. It contains no third-party code, so it has no `THIRD_PARTY_NOTICES.md` yet. No release artifact bundles the dependencies' license files, because reflex has no packaged release.
+- **Scope.** This covers what reflex ships, the code that builds it and the tests, the WebAssembly module and the trace player included. The docs site's toolchain is not part of it. Astro brings in sharp and libvips (LGPL-3.0) to process images, but they only build the documentation, in CI and on developers' machines.
+- **Current state:** reflex's dependencies, and the trace player's, are those in the table. It contains no third-party code, so it has no `THIRD_PARTY_NOTICES.md` yet. No release artifact bundles the dependencies' license files, because reflex has no packaged release.

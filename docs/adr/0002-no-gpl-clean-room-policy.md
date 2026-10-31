@@ -1,4 +1,4 @@
-# ADR 0002 — No GPL contact; clean-room implementation from papers
+# ADR 0002 — No GPL code; clean-room implementation from papers
 
 **Status:** Accepted
 **Date:** 2026-10-31
@@ -18,13 +18,13 @@ PX4 (BSD-3-Clause) is permissive. reflex already follows PX4's conventions (the 
 
 ## Decision
 
-**No GPL-licensed code anywhere in reflex, for any purpose.** Not as a dependency, not in a test target, not as a build-time tool in what reflex builds, and not as a reference oracle.
+**No GPL-licensed code anywhere in reflex, for any purpose.** Not as a dependency, not in a test target, not as a build-time tool in what reflex builds, and not as a reference oracle. The scope is ADR-0001's: what reflex ships, the code that builds it and the tests, and not the docs site's toolchain.
 
 - Controllers, filters and models are implemented **clean-room from papers, textbooks and specifications**, plus permissively licensed (MIT / BSD / Apache-2.0) references.
-- **Check a reference's license before opening its code.** Reading GPL source and then writing the same thing "from scratch" is not clean-room. A GPL project may be consulted for its structure only, never for its code. This includes tuning tables and filter coefficients, which are code too.
+- **Check a reference's license before opening its code.** Reading GPL source and then writing the same thing "from scratch" is not clean-room. A GPL project's structure may be consulted, meaning its directory layout and how it splits the problem into modules, and nothing else: never its code, its algorithms' details, or its data, which includes tuning tables, gains and filter coefficients.
 - **Test oracles are in-house or permissive:** reflex's own reference models and recorded traces, closed-form results from the literature, permissive libraries (mp-dsp is the `dsp/` tests' reference), and permissive stacks such as PX4. Never compare against the output of a GPL flight stack (Betaflight, INAV, ArduPilot, …), its SITL or its logs.
 - **Conventions are not code.** Following a convention that a GPL project also uses (a rotor order, a frame, a unit) is fine, when it is taken from a permissive source or a specification.
-- LGPL, MPL and SSPL candidates are flagged for explicit review and default to rejected.
+- **LGPL, MPL, AGPL and SSPL code is rejected,** as a dependency and as a reference, as ADR-0001 rejects it. An exception would need an ADR of its own that supersedes this one.
 
 ## Consequences
 

@@ -7,4 +7,4 @@ The decisions are published, with their status, on the [architecture site](https
 | ADR | Decision | Status |
 |---|---|---|
 | [0001](0001-third-party-license-compatibility.md) | Third-party license compatibility (MIT; permissive dependencies only) | Accepted |
-| [0002](0002-no-gpl-clean-room-policy.md) | No GPL contact for any purpose; clean-room from papers | Accepted |
+| [0002](0002-no-gpl-clean-room-policy.md) | No GPL code for any purpose; clean-room from papers | Accepted |

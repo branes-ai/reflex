@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.2](https://github.com/branes-ai/reflex/compare/v0.7.1...v0.7.2) (2026-10-31)
+
+
+### Documentation
+
+* publish the animation plan as a record, and add the records folders ([#56](https://github.com/branes-ai/reflex/issues/56)) ([4d12ac3](https://github.com/branes-ai/reflex/commit/4d12ac349ddb97b6ebb1a066315865627a139c9d))
+
 ## [0.7.1](https://github.com/branes-ai/reflex/compare/v0.7.0...v0.7.1) (2026-10-30)
 
 

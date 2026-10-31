@@ -30,5 +30,7 @@ builds it.
   paired with a quantitative check.
 
 Mission SITL in racing-drone keeps everything that is about the mission. The
-two share a trace schema and a player, so they look consistent and nothing
-is built twice ([boundary](../standards/animation.md#boundary-with-mission-sitl)).
+two are to share a trace schema and a player, so they look consistent and
+nothing is built twice ([boundary](../standards/animation.md#boundary-with-mission-sitl)).
+The schema is reflex's today; sharing the player with racing-drone is P5 of
+the [plan](../plan/animation/README.md), not yet done.

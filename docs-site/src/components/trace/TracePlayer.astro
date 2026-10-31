@@ -24,7 +24,7 @@ interface Props {
   title: string;
   /** Text description of what happens (ANI-10). */
   description: string;
-  /** Time plots, and bar panels (`kind: 'bars'`) that show one sample at the cursor. */
+  /** Time plots, bar panels (`kind: 'bars'`) that show one sample at the cursor, and spectrograms (`kind: 'spectrogram'`). */
   plots: PanelSpec[];
   /** Thrust-arrow scale [m per N]; shown on screen (ANI-5). */
   thrustScale?: number;
@@ -93,7 +93,7 @@ const config = {
           <label class="tp-slider">
             <span class="tp-slider-label">{q.label}</span>
             <input type="range" min={q.min} max={q.max} step={q.step} value={sliderValue(q)} data-param={i} />
-            <output data-param-value={i}>{sliderValue(q)} {q.unit}</output>
+            <output data-param-value={i}>{q.unit ? `${sliderValue(q)} ${q.unit}` : sliderValue(q)}</output>
           </label>
         ))}
       </div>
@@ -145,10 +145,17 @@ const config = {
                 </span>
               ))}
               {panel.dashed && <span class="tp-key tp-muted">dashed: command</span>}
+              {'scale' in panel && panel.scale && (
+                <span class="tp-key tp-scale-key">
+                  {panel.scale.lo}<span class="tp-ramp" aria-hidden="true"></span>{panel.scale.hi}
+                  <span class="tp-muted">({panel.scale.unit})</span>
+                </span>
+              )}
             </span>
           </div>
           <div class="tp-svg" data-svg set:html={panel.svg} />
           {panel.readout.bars && <p class="tp-sr" data-bars-text></p>}
+          {'spectrogram' in panel.readout && panel.readout.spectrogram && <p class="tp-sr" data-spectrogram-text></p>}
         </div>
       ))}
     </div>
@@ -199,6 +206,8 @@ const config = {
     --tp-s1: #2a78d6; --tp-s2: #eb6834; --tp-s3: #1baf7a; --tp-s4: #eda100;
     --tp-x: #d03b3b; --tp-y: #1f9d3a; --tp-z: #2a6fd6;
     --tp-good: #0e7c3a; --tp-bad: #c62828;
+    /* Sequential ramp for spectrograms: the lowest level recedes into the surface. */
+    --tp-seq-0: #f4f8fd; --tp-seq-1: #b7d3f6; --tp-seq-2: #6da7ec; --tp-seq-3: #2a78d6; --tp-seq-4: #184f95; --tp-seq-5: #0d366b;
     margin: 1.5rem 0;
     border: 1px solid var(--tp-border);
     border-radius: 8px;
@@ -214,6 +223,7 @@ const config = {
     --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
     --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
     --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+    --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
   }
   @media (prefers-color-scheme: dark) {
     :root:where(:not([data-theme='light']):not([data-theme='dark'])) .trace-player {
@@ -223,6 +233,7 @@ const config = {
       --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
       --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
       --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+      --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
     }
   }
   .trace-player:focus-visible { outline: 2px solid var(--sl-color-accent); outline-offset: 2px; }
@@ -280,6 +291,13 @@ const config = {
   .trace-player svg.tp-plot .s-3 { stroke: var(--tp-s3); } .trace-player svg.tp-plot .s-4 { stroke: var(--tp-s4); }
   .trace-player svg.tp-plot .tp-cursor { stroke: var(--tp-ink); stroke-width: 1.25; }
   .trace-player svg.tp-bars { cursor: default; }
+  .trace-player svg.tp-spectrogram image { image-rendering: pixelated; }
+  .trace-player svg.tp-spectrogram .tp-floor { fill: var(--tp-seq-0); }
+  .trace-player svg.tp-spectrogram .tp-veil { fill: var(--tp-surface); opacity: 0.6; }
+  .trace-player svg.tp-spectrogram .line { stroke-width: 1.5; }
+  .trace-player .tp-ramp { display: inline-block; width: 4.5rem; height: 0.55rem; border-radius: 2px; margin: 0 0.35rem; vertical-align: middle;
+    background: linear-gradient(90deg, var(--tp-seq-0), var(--tp-seq-1), var(--tp-seq-2), var(--tp-seq-3), var(--tp-seq-4), var(--tp-seq-5));
+    box-shadow: inset 0 0 0 1px var(--tp-border); }
   .trace-player svg.tp-plot .f-1 { fill: var(--tp-s1); } .trace-player svg.tp-plot .f-3 { fill: var(--tp-s3); }
   .trace-player svg.tp-plot .bar-marker { fill: none; stroke-width: 1.5; stroke-dasharray: 4 3; }
   .trace-player svg.tp-plot .bar-label { fill: var(--tp-ink2); }

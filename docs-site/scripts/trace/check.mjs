@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync, existsSync, writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 import { validateTrace } from '../../src/lib/trace/validate.js';
 import { diffTraces } from '../../src/lib/trace/diff.js';
 import { traceStatus, failing, STATUS_LABEL } from '../../src/lib/trace/status.js';
@@ -115,7 +116,14 @@ if (reportPath) {
   const path = resolve(reportPath);
   const report = existsSync(path) ? JSON.parse(readFileSync(path, 'utf8')) : { runs: {} };
   const env = process.env;
-  report.commit = env.GITHUB_SHA?.slice(0, 7) ?? report.commit ?? 'unknown';
+  const head = () => {
+    try {
+      return execFileSync('git', ['rev-parse', '--short=7', 'HEAD'], { encoding: 'utf8' }).trim();
+    } catch {
+      return 'unknown';
+    }
+  };
+  report.commit = env.GITHUB_SHA?.slice(0, 7) ?? report.commit ?? head();
   report.date ??= new Date().toISOString();
   if (env.GITHUB_RUN_ID) report.run = `${env.GITHUB_SERVER_URL}/${env.GITHUB_REPOSITORY}/actions/runs/${env.GITHUB_RUN_ID}`;
   report.runs[label] = { compiler: compiler ?? 'unknown', traces: outcome, extra };

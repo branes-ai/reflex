@@ -23,8 +23,9 @@ const show = (v: number | number[]) => (Array.isArray(v) ? `[${v.map(fmt).join('
 const OUTCOME: Record<string, string> = {
   match: 'matches the committed trace',
   stale: 'differs from the committed trace',
-  missing: 'did not run, so this page plays the committed trace',
+  missing: 'did not run',
   invalid: 'wrote an invalid trace',
+  extra: 'wrote a trace that is not committed',
 };
 ---
 <StarlightPage

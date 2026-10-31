@@ -7,7 +7,8 @@
 # Regenerate the committed docs traces after a model change:
 #   scripts/gen-traces.sh gcc-release docs-site/src/traces
 # CI runs it into build/traces and compares the result with the committed
-# copies (docs-site/scripts/trace/check.mjs --regen).
+# copies (docs-site/scripts/trace/check.mjs --regen). Every scenario runs even
+# when one fails, so a run shows all failures; the script then exits 1.
 set -euo pipefail
 
 preset=${1:?usage: gen-traces.sh <preset> <out-dir>}
@@ -29,7 +30,12 @@ if [ ${#scenarios[@]} -eq 0 ]; then
     echo "no trace scenarios in $bin" >&2
     exit 1
 fi
+failed=()
 for exe in "${scenarios[@]}"; do
     [ -x "$exe" ] && [ -f "$exe" ] || continue
-    REFLEX_TRACE_DIR="$out" REFLEX_TRACE_COMMIT="$commit" "$exe"
+    REFLEX_TRACE_DIR="$out" REFLEX_TRACE_COMMIT="$commit" "$exe" || failed+=("$(basename "$exe")")
 done
+if [ ${#failed[@]} -gt 0 ]; then
+    echo "scenarios that failed: ${failed[*]}" >&2
+    exit 1
+fi

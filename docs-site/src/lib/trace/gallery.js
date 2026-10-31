@@ -38,7 +38,7 @@ export function scenarios() {
       const rel = `${dir}/${name}.json`;
       const status = traceStatus(trace);
       const runs = report
-        ? Object.entries(report.runs).map(([label, r]) => ({ label, compiler: r.compiler, outcome: r.traces[rel] ?? 'missing' }))
+        ? Object.entries(report.runs).map(([label, r]) => ({ label, compiler: r.compiler, outcome: r.traces[rel] ?? (r.extra?.includes(rel) ? 'extra' : 'missing') }))
         : [];
       return {
         dir,

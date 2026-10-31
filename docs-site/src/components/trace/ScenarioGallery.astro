@@ -5,6 +5,7 @@
 import { scenarios, report, blockLabel } from '../../lib/trace/gallery.js';
 import { escapeHtml, fmt } from './parts';
 import ScenarioStatus from './ScenarioStatus.astro';
+import { failing } from '../../lib/trace/status.js';
 
 const base = import.meta.env.BASE_URL.replace(/\/?$/, '/');
 // Snake-case names break after their underscores, not mid-word.
@@ -17,19 +18,21 @@ const nFailing = count((s) => s.failing);
 const summary = [
   `${count((s) => s.status === 'pass')} pass`,
   `${count((s) => s.status === 'designed')} fail as designed`,
-  `${count((s) => s.status === 'none')} have no checks`,
+  `${count((s) => failing(s.status))} fail`,
+  `${count((s) => s.status === 'none')} have none`,
 ].join(', ');
+const hashed = Boolean(report && /^[0-9a-f]{7,40}$/.test(report.commit));
 const date = report && new Date(report.date).toISOString().replace('T', ' ').slice(0, 16);
 const compilers = report ? Object.entries(report.runs).map(([label, r]: [string, any]) => `${label} (${r.compiler})`) : [];
 ---
 <div class="sg not-content">
   <p class={nFailing ? 'sg-summary sg-alarm' : 'sg-summary'}>
-    <strong>{all.length} scenarios: {nFailing ? `${nFailing} failing` : 'none failing'}.</strong> {summary}.
+    <strong>{all.length} scenarios, {nFailing ? `${nFailing} failing` : 'none failing'}.</strong> Their checks: {summary}.
   </p>
   {report ? (
     <p class="sg-run">
       Run on {date} UTC at commit{' '}
-      <a href={`https://github.com/branes-ai/reflex/commit/${report.commit}`}><code>{report.commit}</code></a>, with{' '}
+      {hashed ? <a href={`https://github.com/branes-ai/reflex/commit/${report.commit}`}><code>{report.commit}</code></a> : <code>{report.commit}</code>}, with{' '}
       {compilers.join(' and ')}. Each run is compared with the committed traces; the pages play the{' '}
       {Object.keys(report.runs)[0]} run.{report.run && <> <a href={report.run}>Workflow run</a>.</>}
     </p>

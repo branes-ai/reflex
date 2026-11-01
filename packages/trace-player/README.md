@@ -24,7 +24,7 @@ The package ships with each reflex release as an npm tarball. Install it by
 URL in the docs site; npm pins the URL in `package.json`:
 
 ```sh
-version=0.9.2  # x-release-please-version
+version=0.9.4  # x-release-please-version
 npm install "https://github.com/branes-ai/reflex/releases/download/v$version/branes-ai-trace-player-$version.tgz"
 ```
 

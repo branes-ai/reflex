@@ -1,6 +1,6 @@
 {
   "name": "@branes-ai/trace-player",
-  "version": "0.9.3",
+  "version": "0.9.4",
   "description": "The reflex-trace/1 schema, its validator, and TracePlayer, the Astro component that plays a trace on a docs site.",
   "type": "module",
   "license": "MIT",

@@ -1,6 +1,6 @@
 # ADR 0001 — Third-party license compatibility
 
-**Status:** Accepted
+**Status:** Accepted (amended 2026-11-01: third-party data and published facts)
 **Date:** 2026-10-31
 **Source:** the stack's license posture, set in cortex's [ADR 0001](https://github.com/branes-ai/cortex/blob/main/docs/adr/0001-third-party-license-compatibility.md)
 **Related:** [ADR-0002](0002-no-gpl-clean-room-policy.md)
@@ -25,6 +25,8 @@ reflex is MIT-licensed (see the top-level [`LICENSE`](../../LICENSE)), like the 
 
 The trace player itself is reflex's own code, MIT-licensed, and other repos' sites use it, so its dependencies are part of what reflex ships.
 
+**Data is someone's work too.** Fixtures, traces and tuning made by reflex are its own. A third-party dataset or set of pretrained weights may be committed or fetched only under a license this table records; data without one, or under a non-commercial or share-alike license (CC BY-NC, CC BY-SA, …), stays outside the repo. A dataset's published facts are not its data: calibration parameters, sensor specifications and results printed in a paper may be written into the repo's own files, with a citation to their source. A file copied from a dataset is the dataset's, and follows the rule above.
+
 No GPL, LGPL, AGPL, MPL or SSPL dependency is accepted. [ADR-0002](0002-no-gpl-clean-room-policy.md) is the wider policy: no GPL code for any purpose, including the flight stacks most often used as references. An exception would need an ADR of its own that supersedes this one.
 
 ## Decision
@@ -32,9 +34,10 @@ No GPL, LGPL, AGPL, MPL or SSPL dependency is accepted. [ADR-0002](0002-no-gpl-c
 1. **reflex stays MIT-licensed.** Every dependency must be compatible with MIT.
 2. **A PR that adds a dependency must add it to this table**, with its license and its obligation. A dependency that is dual-licensed is used under its permissive branch.
 3. **Any file of someone else's work committed to reflex** (copied, ported or generated from a third-party source) is listed, with its license text, in a top-level `THIRD_PARTY_NOTICES.md`, as synapse does. The PR that adds the first such file creates it.
+4. **Third-party data and weights** are committed or fetched only under a license recorded in the table above; the rest stays outside the repo. Published facts (calibrations, specifications, a paper's results) may be quoted, with a citation.
 
 ## Consequences
 
 - This table answers a partner's license review: what reflex links, and under which terms.
 - **Scope.** This covers what reflex ships, the code that builds it and the tests, the WebAssembly module and the trace player included. The docs site's toolchain is not part of it. Astro brings in sharp (Apache-2.0) to process images, and sharp brings prebuilt libvips binaries, the `@img/sharp-libvips-*` packages (LGPL-3.0-or-later). They only build the documentation, in CI and on developers' machines.
-- **Current state:** reflex's dependencies, and the trace player's, are those in the table. It contains no third-party code, so it has no `THIRD_PARTY_NOTICES.md` yet. No release artifact bundles the dependencies' license files, because reflex has no packaged release.
+- **Current state:** reflex's dependencies, and the trace player's, are those in the table. It contains no third-party code and no third-party data, so it has no `THIRD_PARTY_NOTICES.md` yet. No release artifact bundles the dependencies' license files, because reflex has no packaged release.

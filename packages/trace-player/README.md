@@ -89,6 +89,13 @@ to a CMake build, as a subproject or with FetchContent. A writer in another
 language must produce the same JSON; `validateTrace` is the reference for
 what is accepted.
 
+A mission replay can carry its world as the trace's `scene`: obstacles, the
+goal, gates, a boundary and other agents, each a shape (box, cylinder,
+sphere, or a compound of them) at a fixed pose or one read from its
+channels, optionally drawn as a visual such as a tree. The writer adds them
+with `Trace::entity()`. The animation standard's trace schema defines the
+fields, and the Trace Player page plays an example.
+
 ## Develop
 
 The package lives in reflex's `packages/trace-player`. reflex's docs site

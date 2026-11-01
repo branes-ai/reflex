@@ -161,6 +161,9 @@ jobs:
       - name: Validate committed traces
         working-directory: docs-site
         run: npm run traces:check
+      - name: Validator tests (the scene's rules)
+        working-directory: docs-site
+        run: npm run test:validate
       - name: Regenerate traces (gcc) and compare
         run: |
           cmake --preset gcc-release -DREFLEX_BUILD_TESTS=OFF -DREFLEX_BUILD_BENCH=OFF

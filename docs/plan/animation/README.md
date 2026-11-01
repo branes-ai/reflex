@@ -1,5 +1,5 @@
 ---
-status: in-progress
+status: complete
 ---
 # Plan: block pages and animation
 
@@ -72,7 +72,18 @@ channel. The deploy workflow runs the suite with gcc and clang on every
 deploy and nightly, publishes the site from that run, and fails after
 publishing when a scenario fails. A check can be marked `"expect": "fail"`
 for a scenario that shows the edge of the envelope (`filters/low_rate`),
-and CI fails any other failing check. P5 follows.
+and CI fails any other failing check. P5 is done, which completes the plan.
+The player, the schema, and its validator are one npm package,
+`@branes-ai/trace-player`, in `packages/trace-player`
+([#65](https://github.com/branes-ai/reflex/pull/65)). Each reflex release
+attaches it as a tarball, first v0.9.0, and reflex's own site builds from
+the same packed files. racing-drone's `trace_export` writes a SITL log as a
+`reflex-trace/1` replay, and its
+[race replay](https://branes-ai.github.io/racing-drone/guides/mission-replay/)
+plays two laps of baseline B0 in the same player, pinned to the v0.9.1
+tarball ([racing-drone#87](https://github.com/branes-ai/racing-drone/pull/87)).
+The player gained options for a trace from another repository: the repository
+its footer links to, how the trace is kept, and the dashed line's label.
 
 ## Order
 
@@ -103,10 +114,16 @@ Taken:
   (`model/quadrotor-explainer`, `model/quadrotor-deployment`), so nothing
   moves and no redirects are needed. The datasheet joins the V&V page when
   WS5 produces it.
+- **Where the shared player lives.** Taken in P5: a package in reflex,
+  `packages/trace-player`, rather than its own repository, so the player
+  and the schema change with the traces reflex writes, in one PR. It is
+  versioned with reflex and shipped as a tarball on each release, which
+  other sites pin by URL, rather than published to an npm registry. racing-drone
+  writes its traces with its own small writer, since its reflex pin
+  predates `branes::reflex_trace`.
 
 Still open:
 
 1. **BB-R5** (deployment guide) added to the building block standard for
-   grade A.
-2. **Where the shared player lives** for P5: in reflex's docs-site, or a
-   small separate package that reflex and racing-drone both depend on.
+   grade A. The five blocks this plan covers each have one: the quadrotor
+   model, the PID controller, the mixer, the cascade, and the gyro filters.

@@ -26,7 +26,7 @@
     "wasm-agree": "node scripts/trace/wasm-agree.mjs"
   },
   "dependencies": {
-    "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.4.1",
+    "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.6.0",
     "@branes-ai/trace-player": "file:../packages/trace-player"
   }
 }

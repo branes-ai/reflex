@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.9.2](https://github.com/branes-ai/reflex/compare/v0.9.1...v0.9.2) (2026-11-01)
+
+
+### Documentation
+
+* name the LGPL packages in the docs toolchain exactly ([#73](https://github.com/branes-ai/reflex/issues/73)) ([1a1f110](https://github.com/branes-ai/reflex/commit/1a1f1109e634fdbc2ba4d5d8185a9f6cd84539bb))
+* **plan:** animation plan complete, with p5 and the shared player decision ([#72](https://github.com/branes-ai/reflex/issues/72)) ([45ce03f](https://github.com/branes-ai/reflex/commit/45ce03ffa4e984852c6e3bb57c436941cb21bef5))
+* record the license policy as ADRs 0001 and 0002 ([#70](https://github.com/branes-ai/reflex/issues/70)) ([b3bf46c](https://github.com/branes-ai/reflex/commit/b3bf46c74671633897f3359f77b1562fd91a950d))
+
 ## [0.9.1](https://github.com/branes-ai/reflex/compare/v0.9.0...v0.9.1) (2026-10-31)
 
 

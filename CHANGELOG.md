@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.9.3](https://github.com/branes-ai/reflex/compare/v0.9.2...v0.9.3) (2026-11-01)
+
+
+### Build System
+
+* docs-kit v0.6.0 for the docs site ([#75](https://github.com/branes-ai/reflex/issues/75)) ([74090a5](https://github.com/branes-ai/reflex/commit/74090a595040283bbbd37c35548dee9d6cdbe8ae))
+
+
+### Documentation
+
+* **adr:** add the third-party data rule to the license ADR ([#78](https://github.com/branes-ai/reflex/issues/78)) ([64fd6a1](https://github.com/branes-ai/reflex/commit/64fd6a12432120ba65867f3adc3f030228741888))
+* **sessions:** log of the animation plan's p4 and p5 session ([#74](https://github.com/branes-ai/reflex/issues/74)) ([52f6eb1](https://github.com/branes-ai/reflex/commit/52f6eb140b3e2a998ae3f6f6615067782037d35d))
+
 ## [0.9.2](https://github.com/branes-ai/reflex/compare/v0.9.1...v0.9.2) (2026-11-01)
 
 

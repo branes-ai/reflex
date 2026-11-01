@@ -93,7 +93,9 @@ export function validateTrace(trace) {
 
   // Scene: unique ids, unit quaternions, a tree drawn on a cylinder, and pose
   // channels that exist with the pose's width (unit norm for an attitude).
-  const unit = (q) => Math.abs(Math.hypot(...q) - 1) <= ATTITUDE_NORM_TOL;
+  // An entry that isn't four numbers (a malformed channel can mix scalars and
+  // arrays) is not a unit quaternion, rather than an exception.
+  const unit = (q) => Array.isArray(q) && q.length === 4 && Math.abs(Math.hypot(...q) - 1) <= ATTITUDE_NORM_TOL;
   const entityIds = new Set();
   for (const e of trace.scene?.entities ?? []) {
     const where = `scene entity ${e.id}`;

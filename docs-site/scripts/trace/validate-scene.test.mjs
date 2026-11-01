@@ -80,3 +80,13 @@ test('the validator refuses what the schema cannot express', () => {
     assert.ok(errors.some((e) => expected.test(e)), `${name}: ${errors.join('; ')}`);
   }
 });
+
+test('a malformed attitude channel is reported, not thrown', () => {
+  // A channel may mix scalars and arrays as far as the schema goes; the
+  // validator reports it, including through an entity that names it.
+  const errors = errorsAfter((es, trace) => {
+    trace.channels.target_attitude[1] = 1;
+  });
+  assert.ok(errors.some((e) => /channel target_attitude: entry 1 does not have width 4/.test(e)), errors.join('; '));
+  assert.ok(errors.some((e) => /its attitude channel target_attitude has a non-unit entry at 1/.test(e)), errors.join('; '));
+});

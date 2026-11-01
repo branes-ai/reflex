@@ -20,14 +20,16 @@ The player's behaviour is on its [standard page](https://branes-ai.github.io/ref
 
 ## Install
 
-The package ships with each reflex release as an npm tarball. Pin it by URL
-in the docs site's `package.json`:
+The package ships with each reflex release as an npm tarball. Install it by
+URL in the docs site; npm pins the URL in `package.json`:
 
-```json
-"dependencies": {
-  "@branes-ai/trace-player": "https://github.com/branes-ai/reflex/releases/download/v0.9.0/branes-ai-trace-player-0.9.0.tgz"
-}
+```sh
+version=0.9.2  # x-release-please-version
+npm install "https://github.com/branes-ai/reflex/releases/download/v$version/branes-ai-trace-player-$version.tgz"
 ```
+
+`version` is the latest release; release-please updates it, and the release
+job checks it.
 
 Its version is reflex's. It brings `three` and `ajv` with it.
 

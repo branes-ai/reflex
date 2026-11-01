@@ -50,3 +50,21 @@ jobs:
           fi
           npm pack
           gh release upload "$TAG" "branes-ai-trace-player-$version.tgz" --repo "$GITHUB_REPOSITORY"
+      # After the upload, so a stale README never holds the package back. The
+      # README's install snippet names the version once, on the line
+      # release-please rewrites (x-release-please-version); the URL below it
+      # must build both the tag and the file name from that variable.
+      - name: Check the README's install version
+        working-directory: packages/trace-player
+        run: |
+          version=$(node -p "require('./package.json').version")
+          readme=$(sed -n 's/^version=\([^ ]*\)  # x-release-please-version$/\1/p' README.md)
+          if [ "$readme" != "$version" ]; then
+            echo "README.md installs version '${readme:-none}', but the package is $version" >&2
+            exit 1
+          fi
+          url='releases/download/v$version/branes-ai-trace-player-$version.tgz'
+          if ! grep -qF "$url" README.md; then
+            echo "README.md's install URL does not build the tag and file name from \$version" >&2
+            exit 1
+          fi

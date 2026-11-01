@@ -1,18 +1,25 @@
-// reflex-trace/1 writer (tools/trace): invariants W1–W6 and the serialized form.
+// reflex-trace/1 writer (tools/trace): invariants W1–W9 and the serialized form.
 #include <branes/reflex/trace/writer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <cmath>
 #include <limits>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 using branes::reflex::trace::Check;
+using branes::reflex::trace::Entity;
 using branes::reflex::trace::format_number;
+using branes::reflex::trace::Pose;
 using branes::reflex::trace::Provenance;
 using branes::reflex::trace::reserved_width;
+using branes::reflex::trace::Shape;
 using branes::reflex::trace::Trace;
+using branes::reflex::trace::Visual;
 
 namespace {
 
@@ -162,4 +169,132 @@ TEST_CASE("trace writer: names, ids, and labels enforce W6 and W7", "[trace]") {
     Check bad = c;
     bad.id = "V3";
     REQUIRE_THROWS_AS(tr.check(bad), std::invalid_argument);
+}
+
+namespace {
+
+/// A trace of two samples with a position channel and an agent's pose channels.
+Trace two_samples() {
+    Trace tr(provenance());
+    tr.channel("position", 3);
+    tr.channel("agent_position", 3, "m");
+    tr.channel("agent_attitude", 4, "1");
+    for (int k = 0; k < 2; ++k) {
+        tr.sample(k * 0.01);
+        tr.set("position", {0, 0, 1});
+        tr.set("agent_position", {2.0 + k, 0, 1});
+        tr.set("agent_attitude", {1, 0, 0, 0});
+    }
+    return tr;
+}
+
+Entity tree(const std::string& id) {
+    return {.id = id,
+            .role = "obstacle",
+            .shape = Shape::cylinder(0.3, 6),
+            .pose = {.position = std::array<double, 3>{4, 1, 3}, .attitude = std::nullopt},
+            .visual = Visual::tree(),
+            .label = "obstacle 3"};
+}
+
+}  // namespace
+
+TEST_CASE("trace writer: the scene's serialized form", "[trace][scene]") {
+    Trace tr = two_samples();
+    tr.entity(tree("tree-3"));
+    tr.entity({.id = "gate-1",
+               .role = "gate",
+               .shape = Shape::compound({{Shape::box(0.1, 0.1, 2), {0, -1, 0}, {1, 0, 0, 0}},
+                                         {Shape::box(0.1, 0.1, 2), {0, 1, 0}, {1, 0, 0, 0}}}),
+               .pose = {.position = std::array<double, 3>{5, 0, 1}, .attitude = std::array<double, 4>{1, 0, 0, 0}},
+               .visual = std::nullopt,
+               .label = {}});
+    tr.entity({.id = "agent",
+               .role = "agent",
+               .shape = Shape::sphere(0.2),
+               .pose = {.position = std::string("agent_position"), .attitude = std::string("agent_attitude")},
+               .visual = Visual::model("models/balloon.glb", std::array<double, 3>{1, 1, 1}),
+               .label = {}});
+    const std::string json = tr.to_json();
+    REQUIRE(contains(json, "\"scene\": { \"entities\": ["));
+    REQUIRE(contains(json,
+                     "{ \"id\": \"tree-3\", \"role\": \"obstacle\", \"label\": \"obstacle 3\", "
+                     "\"shape\": { \"type\": \"cylinder\", \"radius\": 0.3, \"height\": 6 }, "
+                     "\"pose\": { \"position\": [4, 1, 3] }, \"visual\": { \"kind\": \"tree\" } }"));
+    REQUIRE(contains(json,
+                     "\"shape\": { \"type\": \"compound\", \"parts\": [ { \"shape\": { \"type\": \"box\", "
+                     "\"size\": [0.1, 0.1, 2] }, \"offset\": { \"position\": [0, -1, 0], "
+                     "\"attitude\": [1, 0, 0, 0] } }, "));
+    REQUIRE(contains(json, "\"pose\": { \"position\": \"agent_position\", \"attitude\": \"agent_attitude\" }"));
+    REQUIRE(
+        contains(json, "\"visual\": { \"kind\": \"model\", \"uri\": \"models/balloon.glb\", \"scale\": [1, 1, 1] }"));
+    // A trace without a scene has no scene key, as before.
+    REQUIRE_FALSE(contains(two_samples().to_json(), "\"scene\""));
+}
+
+TEST_CASE("trace writer: scene entities enforce W8", "[trace][scene]") {
+    Trace tr = two_samples();
+    tr.entity(tree("tree-3"));
+    REQUIRE_THROWS_AS(tr.entity(tree("tree-3")), std::invalid_argument);  // duplicate id
+    REQUIRE_THROWS_AS(tr.entity(tree("Tree")), std::invalid_argument);    // id pattern
+    REQUIRE_THROWS_AS(tr.entity(tree("-tree")), std::invalid_argument);
+    Entity e = tree("tree-4");
+    e.role = "tree";
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // unknown role
+    e = tree("tree-4");
+    e.shape = Shape::cylinder(0, 6);
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // zero radius
+    e.shape = Shape::box(1, 1, std::numeric_limits<double>::infinity());
+    e.visual = std::nullopt;
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // infinite size
+    e.shape = Shape::box(1, 1, 1);
+    e.visual = Visual::tree();
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // a tree on a box
+    e.visual = Visual::model("");
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // a model without a uri
+    e.visual = std::nullopt;
+    e.shape =
+        Shape::compound({{Shape::compound({{Shape::sphere(1), {0, 0, 0}, {1, 0, 0, 0}}}), {0, 0, 0}, {1, 0, 0, 0}}});
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // a compound inside a compound
+    e.shape = Shape::compound({{Shape::sphere(1), {0, 0, 0}, {0.9, 0, 0, 0}}});
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // a part's attitude not unit
+    e.shape = Shape::sphere(1);
+    e.pose.attitude = std::array<double, 4>{1, 0.1, 0, 0};
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // the pose's attitude not unit
+    e.pose = {.position = std::string("Agent"), .attitude = std::nullopt};
+    REQUIRE_THROWS_AS(tr.entity(e), std::invalid_argument);  // not a channel name
+    e.pose = {.position = std::array<double, 3>{0, 0, 0}, .attitude = std::nullopt};
+    tr.entity(e);  // all fixed
+}
+
+TEST_CASE("trace writer: scene pose channels enforce W9 at serialization", "[trace][scene]") {
+    const auto with = [](Pose pose) {
+        Trace tr = two_samples();
+        tr.entity({.id = "agent",
+                   .role = "agent",
+                   .shape = Shape::sphere(0.2),
+                   .pose = std::move(pose),
+                   .visual = std::nullopt,
+                   .label = {}});
+        return tr;
+    };
+    REQUIRE_NOTHROW(with({.position = std::string("agent_position"), .attitude = std::nullopt}).to_json());
+    REQUIRE_THROWS_AS(with({.position = std::string("intruder"), .attitude = std::nullopt}).to_json(),
+                      std::invalid_argument);  // not declared
+    REQUIRE_THROWS_AS(with({.position = std::string("agent_attitude"), .attitude = std::nullopt}).to_json(),
+                      std::invalid_argument);  // width 4 for a position
+    REQUIRE_THROWS_AS(with({.position = std::array<double, 3>{0, 0, 0}, .attitude = std::string("position")}).to_json(),
+                      std::invalid_argument);  // width 3 for an attitude
+
+    Trace bad(provenance());
+    bad.channel("spin", 4, "1");
+    bad.sample(0);
+    bad.set("spin", {1, 1, 0, 0});  // not a unit quaternion
+    bad.entity({.id = "agent",
+                .role = "agent",
+                .shape = Shape::sphere(0.2),
+                .pose = {.position = std::array<double, 3>{0, 0, 0}, .attitude = std::string("spin")},
+                .visual = std::nullopt,
+                .label = {}});
+    REQUIRE_THROWS_AS(bad.to_json(), std::invalid_argument);
 }

@@ -66,6 +66,10 @@ if (ghost) {
   }
 }
 const duration = trace.t[trace.t.length - 1];
+// The scene (if any): its size for the legend, and whether any entity has a
+// visual, which is what the collision-shapes toggle shows the shape under.
+const sceneEntities: number = trace.scene?.entities?.length ?? 0;
+const sceneVisuals: boolean = (trace.scene?.entities ?? []).some((e: any) => e.visual);
 // Slider values in display units, from the SI defaults.
 const sliderValue = (q: any) => Number((q.default / q.scale).toPrecision(6));
 const config = {
@@ -112,6 +116,7 @@ const config = {
           World: z up · Body: x forward, y left, z up<br />
           Rotors (PX4 Quad X): <b>0</b> FR, <b>1</b> RL spin CCW · <b>2</b> FL, <b>3</b> RR spin CW
           {ghost && <><br />Translucent: {ghost.label}</>}
+          {sceneEntities > 0 && <><br />{`Scene: ${sceneEntities} ${sceneEntities === 1 ? 'entity' : 'entities'}`}{sceneVisuals && ' · Collision shapes: what a simulation tests'}</>}
         </div>
         <div class="tp-bottom">
           <div class="tp-overlay tp-event" data-event aria-live="polite"></div>
@@ -123,6 +128,7 @@ const config = {
           <button type="button" data-camera="chase" aria-pressed="true">Chase</button>
           <button type="button" data-camera="behind" aria-pressed="false">Behind</button>
           <button type="button" data-camera="overview" aria-pressed="false">Overview</button>
+          {sceneVisuals && <button type="button" data-collision aria-pressed="false">Collision shapes</button>}
         </div>
         <p class="tp-fallback" data-fallback hidden>
           The 3-D view needs WebGL, which this browser does not provide. The plots and the description below show the same trace.
@@ -204,6 +210,7 @@ const config = {
     --tp-s1: #2a78d6; --tp-s2: #eb6834; --tp-s3: #1baf7a; --tp-s4: #eda100;
     --tp-x: #d03b3b; --tp-y: #1f9d3a; --tp-z: #2a6fd6;
     --tp-good: #0e7c3a; --tp-bad: #c62828;
+    --tp-bark: #7a5a3c; --tp-foliage: #3f7d4a;
     /* Sequential ramp for spectrograms: the lowest level recedes into the surface. */
     --tp-seq-0: #f4f8fd; --tp-seq-1: #b7d3f6; --tp-seq-2: #6da7ec; --tp-seq-3: #2a78d6; --tp-seq-4: #184f95; --tp-seq-5: #0d366b;
     margin: 1.5rem 0;
@@ -221,6 +228,7 @@ const config = {
     --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
     --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
     --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+    --tp-bark: #8f6c4b; --tp-foliage: #4d8f58;
     --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
   }
   @media (prefers-color-scheme: dark) {
@@ -231,6 +239,7 @@ const config = {
       --tp-s1: #3987e5; --tp-s2: #d95926; --tp-s3: #199e70; --tp-s4: #c98500;
       --tp-x: #e66767; --tp-y: #3fb35a; --tp-z: #5b9cf0;
       --tp-good: #4cc27a; --tp-bad: #ef6b6b;
+      --tp-bark: #8f6c4b; --tp-foliage: #4d8f58;
       --tp-seq-0: #1d2026; --tp-seq-1: #183a66; --tp-seq-2: #1c5cab; --tp-seq-3: #3987e5; --tp-seq-4: #86b6ef; --tp-seq-5: #e3eefc;
     }
   }

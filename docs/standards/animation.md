@@ -195,6 +195,29 @@ page documents the tooling.
   [scenario gallery](../scenarios/gallery.mdx) shows it.
 - **`vehicle`** (optional) holds geometry for the 3-D view: `arm_length` in
   m. Without it, the view draws the RP-1 default airframe.
+- **`scene`** (optional) holds the world around the vehicle, for a mission
+  replay: `entities`, at least one. Each has:
+  - **`id`**, matching `[a-z0-9][a-z0-9_-]*`, unique in the trace;
+  - **`role`**: `obstacle`, `goal`, `gate`, `boundary`, `agent`, or `marker`;
+  - **`shape`**, in the entity's frame and centred on its origin:
+    `{ "type": "box", "size": [x, y, z] }`,
+    `{ "type": "cylinder", "radius", "height" }` along z,
+    `{ "type": "sphere", "radius" }`, or
+    `{ "type": "compound", "parts": [{ "shape", "offset": { "position", "attitude"? } }] }`,
+    whose parts are primitives. Lengths in m, all > 0. The shape is what a
+    simulation tests, such as an obstacle's collision geometry.
+  - **`pose`**: a `position` in m and an optional `attitude`, body to world,
+    each either fixed (an array) or the name of a channel of width 3 or 4,
+    read at each sample, for an entity that moves. Attitudes, fixed or
+    recorded, are unit quaternions.
+  - **`visual`** (optional), drawn in place of the shape and never tested:
+    `{ "kind": "tree", "canopy_radius"? }` on a cylinder, or
+    `{ "kind": "model", "uri", "scale"? }`, a glTF model, which a player that
+    can't load models draws as the shape.
+  - **`label`** (optional), display text.
+
+  A scene is part of what the trace is: the `regen` and `wasm` profiles
+  require it to be identical.
 - **`provenance.equivalence`** (optional) declares an override for a chaotic
   scenario: a `justification`, and optionally a comparison `horizon` in s
   and per-channel `tolerances` (`rtol`, `atol`).
@@ -256,11 +279,11 @@ fail.
 | Concern | Reflex | Mission repo (racing-drone) |
 |---|---|---|
 | Scope | One block, or the reference closed loop (BB-I1) | The full stack in a mission |
-| Scene | Minimal: axes, ground grid, vehicle glyph, force vectors | Course, gates, environment, other agents |
+| Scene | Minimal: axes, ground grid, vehicle glyph, force vectors | Course, gates, environment, other agents, in the trace's `scene` |
 | Question answered | How the block behaves, and why | Whether the mission succeeds, and how fast |
 | Scenarios | Block characterization, envelope edges, faults | Mission profiles, races, operator workflows |
 | Rendering | Docs-site player (Tier 1) and Wasm widgets (Tier 2) | Its SITL renderer (Gazebo or another engine), plus the same player for docs |
-| Shared | Trace schema `reflex-trace/1` and the `TracePlayer` component, published from reflex | Consumes both, and exports mission replays in the schema |
+| Shared | Trace schema `reflex-trace/1` (its `scene` included) and the `TracePlayer` component, published from reflex | Consumes both, and exports mission replays in the schema, with its world as the scene |
 
 The rule: if an animation needs mission assets or more than the reference
 closed loop, it belongs in the mission repo. If it explains a block, it

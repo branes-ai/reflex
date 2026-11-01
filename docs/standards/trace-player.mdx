@@ -1,10 +1,11 @@
 ---
 title: Trace Player
-description: The reflex-trace/1 tooling and the TracePlayer component that plays block traces on docs pages, with the P0 test trace.
+description: The reflex-trace/1 tooling and the TracePlayer component that plays block traces on docs pages, with the P0 test trace and an example of a scene.
 ---
 
 import TracePlayer from '@site/components/trace/TracePlayer.astro';
 import rollPulse from '@site/traces/quadrotor/roll_pulse.json';
+import sceneSquare from '@site/traces/player/scene_square.json';
 
 This page documents the trace playback tier of the
 [block pages and animation standard](animation.md). It covers the
@@ -39,6 +40,37 @@ The check below the player is computed by the scenario harness, in C++. The
 player only displays it (ANI-4). Its badge reads *pass* or *fail*, or
 *fails, as designed* for a check the trace expects to fail: a scenario
 that shows the edge of the block's envelope.
+
+## A scene: the waypoint square among trees
+
+A trace can carry a scene: the world the vehicle flies in, drawn around it
+([trace format additions](#trace-format-additions)). This one is the
+cascade's [waypoint square](../control/cascade-explainer.mdx#4-flying-a-path-the-waypoint-square),
+unchanged, with a scene added by its scenario
+(`tools/trace/scenarios/player/scene_square.cpp`).
+
+<TracePlayer
+  trace={sceneSquare}
+  title="What does a trace's scene show around the vehicle?"
+  description="The flight is the cascade's waypoint square: RP-1 flies a 10 m square at 5 m and ends where it started. Around it, the scene: a boundary box, six trees (cylinders drawn as trees, one in the middle of the square), a rock (a box drawn in the obstacle colour), a gate on the third leg that the path runs through, the goal at the start corner, and the position setpoint as a marker that moves, its pose read from the trace's setpoint_position and target_attitude channels. The Collision shapes button draws each entity's shape, which is what a simulation tests, over its visual: the trees' canopies are drawn, but only their trunks are obstacles."
+  plots={[
+    { channel: 'position', title: 'Position', components: [0, 1], labels: ['x', 'y'],
+      series: [{ channel: 'setpoint_position', component: 0, label: 'x setpoint', color: 1, dashed: true },
+               { channel: 'setpoint_position', component: 1, label: 'y setpoint', color: 2, dashed: true }] },
+    { channel: 'cross_track', title: 'Distance from the square', components: [0], labels: ['cross-track'] },
+  ]}
+/>
+
+Look for three things:
+
+- **Fixed and moving entities.** The trees, the rock, the gate and the goal
+  stay where the scene puts them. The setpoint marker moves with its
+  channels, ahead of the vehicle on each leg.
+- **Shape and visual.** With *Collision shapes* on, each tree shows the
+  cylinder under it: the trunk. A simulation tests that cylinder; the canopy
+  is only drawn.
+- **The whole field.** The *Overview* camera and the ground grid take in the
+  scene as well as the path.
 
 ## How a trace gets onto a page
 
@@ -228,6 +260,36 @@ which reflex's CMake defines for consumers too.
 
 ## Trace format additions
 
-`reflex-trace/1` gained one optional field in P0, as the versioning rule
-allows. `vehicle.arm_length` (in m) lets the 3-D view draw the airframe to
-scale. Traces without it are drawn with the RP-1 default of 0.11 m.
+`reflex-trace/1` gained two optional fields, as the versioning rule allows.
+
+- **`vehicle.arm_length`** (in m), in P0, lets the 3-D view draw the
+  airframe to scale. Traces without it are drawn with the RP-1 default of
+  0.11 m.
+- **`scene`**, for mission replays (the [animation standard's](animation.md#boundary-with-mission-sitl)
+  boundary with mission SITL), holds the world around the vehicle as
+  `entities`. The [trace schema](animation.md#trace-schema) defines each
+  field; in the view:
+  - **Shapes.** Each entity has a shape, a box, a cylinder (along its z), a
+    sphere, or a compound of these at offsets, drawn in its role's colour:
+    obstacles in grey, a gate orange, the goal translucent green, an agent
+    amber, and a boundary or a marker as edges only. The scene's solids are
+    lit, so their form reads in 3-D.
+  - **Visuals.** An entity's visual, if it has one, is drawn in place of
+    the shape: a `tree` on a cylinder is its trunk, the cylinder itself, and
+    a canopy over its upper half, `canopy_radius` wide (by default three
+    times the trunk's radius, at least 0.6 m). A `model` (a glTF file) is
+    for a later player. Until then it is drawn as its shape. When any
+    entity has a visual, the view adds a *Collision shapes* button, which
+    draws the shapes of those entities over their visuals, as translucent
+    volumes that show through (an entity without a visual is drawn as its
+    shape already).
+  - **Poses.** An entity's position and attitude are fixed, or name trace
+    channels of width 3 and 4. Those are read at the cursor's sample, so an
+    entity moves with the trace: another agent, or a setpoint.
+  - **Framing.** The ground grid and the *Overview* camera take in the
+    scene as well as the path.
+
+  The [example above](#a-scene-the-waypoint-square-among-trees) uses each
+  role but the agent. A C++ scenario adds entities with
+  `Trace::entity()`, whose rules (W8 and W9 in `writer.hpp`) are the
+  validator's.

@@ -91,6 +91,37 @@ export function validateTrace(trace) {
     if (!(e.t >= t[0] && e.t <= t[n - 1])) errors.push(`event "${e.label}": t = ${e.t} outside [${t[0]}, ${t[n - 1]}]`);
   }
 
+  // Scene: unique ids, unit quaternions, a tree drawn on a cylinder, and pose
+  // channels that exist with the pose's width (unit norm for an attitude).
+  const unit = (q) => Math.abs(Math.hypot(...q) - 1) <= ATTITUDE_NORM_TOL;
+  const entityIds = new Set();
+  for (const e of trace.scene?.entities ?? []) {
+    const where = `scene entity ${e.id}`;
+    if (entityIds.has(e.id)) errors.push(`${where}: duplicate id`);
+    entityIds.add(e.id);
+    for (const part of e.shape.type === 'compound' ? e.shape.parts : []) {
+      if (part.offset.attitude && !unit(part.offset.attitude)) errors.push(`${where}: a part's attitude is not a unit quaternion`);
+    }
+    if (e.visual?.kind === 'tree' && e.shape.type !== 'cylinder') errors.push(`${where}: a tree is drawn on a cylinder, not a ${e.shape.type}`);
+    for (const [key, width] of [['position', 3], ['attitude', 4]]) {
+      const v = e.pose[key];
+      if (v === undefined) continue;
+      if (typeof v !== 'string') {
+        if (key === 'attitude' && !unit(v)) errors.push(`${where}: its attitude is not a unit quaternion`);
+        continue;
+      }
+      const data = channels[v];
+      if (!data) {
+        errors.push(`${where}: its ${key} channel ${v} is not a channel`);
+      } else if (!Array.isArray(data[0]) || data[0].length !== width) {
+        errors.push(`${where}: its ${key} channel ${v} has width ${Array.isArray(data[0]) ? data[0].length : 1}, not ${width}`);
+      } else if (key === 'attitude') {
+        const k = data.findIndex((q) => !unit(q));
+        if (k >= 0) errors.push(`${where}: its attitude channel ${v} has a non-unit entry at ${k}`);
+      }
+    }
+  }
+
   // Checks: unique ids, and pass consistent with value, limit, and comparison.
   const ids = new Set();
   for (const c of trace.checks ?? []) {

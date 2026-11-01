@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.0](https://github.com/branes-ai/reflex/compare/v0.9.4...v0.10.0) (2026-11-01)
+
+
+### Features
+
+* **trace:** a scene in reflex-trace/1, drawn by the trace player ([#80](https://github.com/branes-ai/reflex/issues/80)) ([4f1758a](https://github.com/branes-ai/reflex/commit/4f1758a4cd48a5e60a67299f4690e5753e3863d6))
+
 ## [0.9.4](https://github.com/branes-ai/reflex/compare/v0.9.3...v0.9.4) (2026-11-01)
 
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://branes-ai.github.io/reflex/schemas/reflex-trace-1.schema.json",
   "title": "reflex-trace/1",
-  "description": "Structure and types of a reflex trace. The semantic rules (cardinality, monotone uniform time, unit quaternions, event range, units of non-reserved channels) are checked by src/lib/validate.js in @branes-ai/trace-player. Normative text: reflex docs/standards/animation (Trace schema).",
+  "description": "Structure and types of a reflex trace. The semantic rules (cardinality, monotone uniform time, unit quaternions, event range, units of non-reserved channels, the scene's ids and pose channels) are checked by src/lib/validate.js in @branes-ai/trace-player. Normative text: reflex docs/standards/animation (Trace schema).",
   "type": "object",
   "required": ["schema", "provenance", "frames", "t", "channels"],
   "additionalProperties": false,
@@ -59,6 +59,30 @@
         "arm_length": { "type": "number", "exclusiveMinimum": 0 }
       }
     },
+    "scene": {
+      "type": "object",
+      "required": ["entities"],
+      "additionalProperties": false,
+      "properties": {
+        "entities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["id", "role", "shape", "pose"],
+            "additionalProperties": false,
+            "properties": {
+              "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$" },
+              "role": { "enum": ["obstacle", "goal", "gate", "boundary", "agent", "marker"] },
+              "label": { "type": "string", "minLength": 1 },
+              "shape": { "$ref": "#/$defs/shape" },
+              "pose": { "$ref": "#/$defs/pose" },
+              "visual": { "$ref": "#/$defs/visual" }
+            }
+          }
+        }
+      }
+    },
     "t": { "type": "array", "minItems": 1, "items": { "type": "number" } },
     "channels": {
       "type": "object",
@@ -107,6 +131,111 @@
           "expect": { "enum": ["pass", "fail"] }
         }
       }
+    }
+  },
+  "$defs": {
+    "vec3": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "type": "number" } },
+    "quat": { "type": "array", "minItems": 4, "maxItems": 4, "items": { "type": "number" } },
+    "length": { "type": "number", "exclusiveMinimum": 0 },
+    "channel_ref": { "type": "string", "pattern": "^[a-z][a-z0-9_]*$" },
+    "primitive": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["type", "size"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "box" },
+            "size": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/length" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "radius", "height"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "cylinder" },
+            "radius": { "$ref": "#/$defs/length" },
+            "height": { "$ref": "#/$defs/length" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["type", "radius"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "sphere" },
+            "radius": { "$ref": "#/$defs/length" }
+          }
+        }
+      ]
+    },
+    "offset": {
+      "type": "object",
+      "required": ["position"],
+      "additionalProperties": false,
+      "properties": {
+        "position": { "$ref": "#/$defs/vec3" },
+        "attitude": { "$ref": "#/$defs/quat" }
+      }
+    },
+    "shape": {
+      "oneOf": [
+        { "$ref": "#/$defs/primitive" },
+        {
+          "type": "object",
+          "required": ["type", "parts"],
+          "additionalProperties": false,
+          "properties": {
+            "type": { "const": "compound" },
+            "parts": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "required": ["shape", "offset"],
+                "additionalProperties": false,
+                "properties": {
+                  "shape": { "$ref": "#/$defs/primitive" },
+                  "offset": { "$ref": "#/$defs/offset" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "pose": {
+      "type": "object",
+      "required": ["position"],
+      "additionalProperties": false,
+      "properties": {
+        "position": { "oneOf": [{ "$ref": "#/$defs/vec3" }, { "$ref": "#/$defs/channel_ref" }] },
+        "attitude": { "oneOf": [{ "$ref": "#/$defs/quat" }, { "$ref": "#/$defs/channel_ref" }] }
+      }
+    },
+    "visual": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "tree" },
+            "canopy_radius": { "$ref": "#/$defs/length" }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "uri"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": { "const": "model" },
+            "uri": { "type": "string", "minLength": 1 },
+            "scale": { "type": "array", "minItems": 3, "maxItems": 3, "items": { "$ref": "#/$defs/length" } }
+          }
+        }
+      ]
     }
   }
 }

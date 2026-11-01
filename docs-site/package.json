@@ -23,7 +23,9 @@
     "trace-diff": "node scripts/trace/trace-diff.mjs",
     "size-budget": "node scripts/trace/size-budget.mjs",
     "prewasm-agree": "node scripts/player-sync.mjs",
-    "wasm-agree": "node scripts/trace/wasm-agree.mjs"
+    "wasm-agree": "node scripts/trace/wasm-agree.mjs",
+    "pretest:validate": "node scripts/player-sync.mjs",
+    "test:validate": "node --test scripts/trace/validate-scene.test.mjs"
   },
   "dependencies": {
     "@branes-ai/docs-kit": "github:branes-ai/docs-kit#v0.6.0",

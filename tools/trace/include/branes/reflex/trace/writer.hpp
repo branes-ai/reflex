@@ -23,6 +23,13 @@
 ///       trace can be marked as expected to fail.
 ///   W7: channel names match [a-z][a-z0-9_]*; at least one channel; event
 ///       labels are non-empty and event times finite.
+///   W8: a scene entity has a unique id matching [a-z0-9][a-z0-9_-]*, a role
+///       of the schema's, finite positive dimensions, finite static poses and
+///       offsets with unit quaternions, a tree visual on a cylinder only, and
+///       a model visual with a uri and a positive scale.
+///   W9: at serialization, a pose channel is a declared channel of width 3
+///       (position) or 4 (attitude), and an attitude channel's entries are
+///       unit quaternions.
 /// Together these are the rules of the JSON Schema and validate.js, so a
 /// trace the writer accepts passes `npm run traces:check`.
 /// Violations throw std::invalid_argument; tools may use exceptions.
@@ -37,11 +44,14 @@
 #include <fstream>
 #include <initializer_list>
 #include <map>
+#include <optional>
 #include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <system_error>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #if defined(__EMSCRIPTEN__)
@@ -78,6 +88,104 @@ struct Check {
     [[nodiscard]] bool pass() const {
         return comparison == "<=" ? value <= limit : value >= limit;
     }
+};
+
+// ── The scene (docs/standards/animation, "Trace schema") ─────────────
+
+/// A shape in the entity's frame, centred on its origin: a box of `size`, a
+/// cylinder of `radius` and `height` along z, a sphere of `radius`, or a
+/// compound of primitives, each at its offset.
+struct Shape {
+    enum class Kind { box, cylinder, sphere, compound };
+    struct Part;
+
+    Kind kind{Kind::box};
+    std::array<double, 3> size{};  ///< box [m]
+    double radius{0};              ///< cylinder, sphere [m]
+    double height{0};              ///< cylinder [m]
+    std::vector<Part> parts;       ///< compound
+
+    [[nodiscard]] static Shape box(double x, double y, double z);
+    [[nodiscard]] static Shape cylinder(double radius, double height);
+    [[nodiscard]] static Shape sphere(double radius);
+    [[nodiscard]] static Shape compound(std::vector<Part> parts);
+};
+
+/// One primitive of a compound shape, at `position` and `attitude` in the entity's frame.
+struct Shape::Part {
+    Shape shape;
+    std::array<double, 3> position{};
+    std::array<double, 4> attitude{1, 0, 0, 0};  ///< [w, x, y, z]
+};
+
+inline Shape Shape::box(double x, double y, double z) {
+    Shape s;
+    s.size = {x, y, z};
+    return s;
+}
+
+inline Shape Shape::cylinder(double radius, double height) {
+    Shape s;
+    s.kind = Kind::cylinder;
+    s.radius = radius;
+    s.height = height;
+    return s;
+}
+
+inline Shape Shape::sphere(double radius) {
+    Shape s;
+    s.kind = Kind::sphere;
+    s.radius = radius;
+    return s;
+}
+
+inline Shape Shape::compound(std::vector<Part> parts) {
+    Shape s;
+    s.kind = Kind::compound;
+    s.parts = std::move(parts);
+    return s;
+}
+
+/// Where an entity is: a fixed position and attitude, or the names of the
+/// trace channels that hold them, for an entity that moves.
+struct Pose {
+    std::variant<std::array<double, 3>, std::string> position;                 ///< [m, world], or a width-3 channel
+    std::optional<std::variant<std::array<double, 4>, std::string>> attitude;  ///< [w, x, y, z], or a width-4 channel
+};
+
+/// What the player draws in place of the shape: a tree on a cylinder (its
+/// trunk the cylinder, its canopy `canopy_radius` wide, 0 for the player's
+/// default), or a model (glTF, for later players; drawn as the shape until then).
+struct Visual {
+    enum class Kind { tree, model };
+    Kind kind{Kind::tree};
+    double canopy_radius{0};                     ///< tree [m]; 0: the player's default
+    std::string uri;                             ///< model
+    std::optional<std::array<double, 3>> scale;  ///< model
+
+    [[nodiscard]] static Visual tree(double canopy_radius = 0) {
+        Visual v;
+        v.canopy_radius = canopy_radius;
+        return v;
+    }
+    [[nodiscard]] static Visual model(std::string uri, std::optional<std::array<double, 3>> scale = std::nullopt) {
+        Visual v;
+        v.kind = Kind::model;
+        v.uri = std::move(uri);
+        v.scale = scale;
+        return v;
+    }
+};
+
+/// One object of the scene. The shape is what the simulation tests (an
+/// obstacle's collision geometry); a visual only changes how it is drawn.
+struct Entity {
+    std::string id;    ///< [a-z0-9][a-z0-9_-]*, unique in the trace
+    std::string role;  ///< obstacle, goal, gate, boundary, agent or marker
+    Shape shape;
+    Pose pose;
+    std::optional<Visual> visual;
+    std::string label;  ///< optional display text
 };
 
 /// Width of a reserved channel, or 0 if `name` is not reserved. Setpoints of a
@@ -334,6 +442,70 @@ public:
         throw std::invalid_argument("reflex-trace: no check " + std::string(id));  // W6
     }
 
+    /// Names the block and the scenario source of a scenario that reuses
+    /// another's run (for example the same flight with a scene added).
+    /// Pre: both non-empty.
+    void source(std::string block, std::string scenario) {
+        if (block.empty() || scenario.empty()) {
+            throw std::invalid_argument("reflex-trace: incomplete provenance");
+        }
+        p_.block = std::move(block);
+        p_.scenario = std::move(scenario);
+    }
+
+    /// Adds a scene entity (W8; its pose channels are checked at serialization, W9).
+    void entity(Entity e) {
+        const auto bad = [&](const std::string& why) {
+            return std::invalid_argument("reflex-trace: scene entity " + e.id + ": " + why);
+        };
+        if (!valid_entity_id(e.id)) {
+            throw bad("its id must match [a-z0-9][a-z0-9_-]*");
+        }
+        for (const Entity& other : entities_) {
+            if (other.id == e.id) {
+                throw bad("duplicate id");
+            }
+        }
+        static constexpr std::array<std::string_view, 6> kRoles = {
+            "obstacle", "goal", "gate", "boundary", "agent", "marker"};
+        bool role = false;
+        for (const std::string_view r : kRoles) {
+            role = role || r == e.role;
+        }
+        if (!role) {
+            throw bad("unknown role " + e.role);
+        }
+        if (!shape_valid(e.shape, true)) {
+            throw bad(
+                "a dimension is not finite and > 0, or a compound part is not a primitive at a finite, unit pose");
+        }
+        if (const auto* p = std::get_if<std::array<double, 3>>(&e.pose.position); p && !finite(*p)) {
+            throw bad("its position is not finite");
+        }
+        if (const auto* name = std::get_if<std::string>(&e.pose.position); name && !valid_channel_name(*name)) {
+            throw bad("its position channel name is not a channel name");
+        }
+        if (e.pose.attitude) {
+            if (const auto* q = std::get_if<std::array<double, 4>>(&*e.pose.attitude); q && !unit(*q)) {
+                throw bad("its attitude is not a unit quaternion");
+            }
+            if (const auto* name = std::get_if<std::string>(&*e.pose.attitude); name && !valid_channel_name(*name)) {
+                throw bad("its attitude channel name is not a channel name");
+            }
+        }
+        if (e.visual) {
+            const Visual& v = *e.visual;
+            if (v.kind == Visual::Kind::tree &&
+                (e.shape.kind != Shape::Kind::cylinder || !std::isfinite(v.canopy_radius) || v.canopy_radius < 0)) {
+                throw bad("a tree is drawn on a cylinder, with a canopy radius ≥ 0");
+            }
+            if (v.kind == Visual::Kind::model && (v.uri.empty() || (v.scale && !positive(*v.scale)))) {
+                throw bad("a model needs a uri, and a scale > 0 if it has one");
+            }
+        }
+        entities_.push_back(std::move(e));
+    }
+
     /// Optional vehicle geometry the 3-D view draws to scale.
     void vehicle_arm_length(double meters) {
         if (!(meters > 0) || !std::isfinite(meters)) {
@@ -356,6 +528,24 @@ public:
                 throw std::invalid_argument("reflex-trace: event outside the time range: " + e.label);  // W5
             }
         }
+        for (const Entity& e : entities_) {
+            if (const auto* name = std::get_if<std::string>(&e.pose.position)) {
+                pose_channel(e, *name, 3);  // W9
+            }
+            if (e.pose.attitude) {
+                if (const auto* name = std::get_if<std::string>(&*e.pose.attitude)) {
+                    const Channel& c = pose_channel(e, *name, 4);  // W9
+                    for (std::size_t k = 0; k < t_.size(); ++k) {
+                        const std::array<double, 4> q = {
+                            c.data[4 * k], c.data[4 * k + 1], c.data[4 * k + 2], c.data[4 * k + 3]};
+                        if (!unit(q)) {
+                            throw std::invalid_argument("reflex-trace: scene entity " + e.id + ": attitude channel " +
+                                                        *name + " has a non-unit entry");  // W9
+                        }
+                    }
+                }
+            }
+        }
         std::string s = "{\n";
         s += "  \"schema\": " + quote(kSchema) + ",\n";
         s += "  \"provenance\": {\n";
@@ -370,6 +560,13 @@ public:
              "\"px4-quad-x\" },\n";
         if (arm_length_ > 0) {
             s += "  \"vehicle\": { \"arm_length\": " + format_number(arm_length_) + " },\n";
+        }
+        if (!entities_.empty()) {
+            s += "  \"scene\": { \"entities\": [";
+            for (std::size_t i = 0; i < entities_.size(); ++i) {
+                s += (i == 0 ? "\n    " : ",\n    ") + entity_json(entities_[i]);
+            }
+            s += "\n  ] },\n";
         }
         s += "  \"t\": [";
         for (std::size_t k = 0; k < t_.size(); ++k) {
@@ -447,6 +644,141 @@ private:
         std::string label;
     };
 
+    /// A pose channel of `e`, declared with `width` (W9).
+    const Channel& pose_channel(const Entity& e, const std::string& name, std::size_t width) const {
+        const auto it = index_.find(name);
+        if (it == index_.end() || channels_[it->second].width != width) {
+            throw std::invalid_argument("reflex-trace: scene entity " + e.id + ": " + name +
+                                        " is not a declared channel of width " + std::to_string(width));
+        }
+        return channels_[it->second];
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] static bool finite(const std::array<double, N>& v) {
+        for (const double x : v) {
+            if (!std::isfinite(x)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    template <std::size_t N>
+    [[nodiscard]] static bool positive(const std::array<double, N>& v) {
+        for (const double x : v) {
+            if (!(std::isfinite(x) && x > 0)) {
+                return false;
+            }
+        }
+        return true;
+    }
+    /// A unit quaternion, within the validator's 1e-6 (validate.js, ATTITUDE_NORM_TOL).
+    [[nodiscard]] static bool unit(const std::array<double, 4>& q) {
+        return finite(q) && std::abs(std::sqrt(q[0] * q[0] + q[1] * q[1] + q[2] * q[2] + q[3] * q[3]) - 1) <= 1e-6;
+    }
+    [[nodiscard]] static bool valid_entity_id(std::string_view id) {
+        if (id.empty() || !((id[0] >= 'a' && id[0] <= 'z') || (id[0] >= '0' && id[0] <= '9'))) {
+            return false;
+        }
+        for (const char c : id) {
+            if (!((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '-')) {
+                return false;
+            }
+        }
+        return true;
+    }
+    /// W8 for a shape; a compound's parts are primitives (top_level false).
+    [[nodiscard]] static bool shape_valid(const Shape& s, bool top_level) {
+        switch (s.kind) {
+        case Shape::Kind::box:
+            return positive(s.size);
+        case Shape::Kind::cylinder:
+            return std::isfinite(s.radius) && s.radius > 0 && std::isfinite(s.height) && s.height > 0;
+        case Shape::Kind::sphere:
+            return std::isfinite(s.radius) && s.radius > 0;
+        case Shape::Kind::compound:
+            if (!top_level || s.parts.empty()) {
+                return false;
+            }
+            for (const Shape::Part& p : s.parts) {
+                if (!shape_valid(p.shape, false) || !finite(p.position) || !unit(p.attitude)) {
+                    return false;
+                }
+            }
+            return true;
+        }
+        return false;
+    }
+
+    template <std::size_t N>
+    [[nodiscard]] static std::string array_json(const std::array<double, N>& v) {
+        std::string s = "[";
+        for (std::size_t i = 0; i < N; ++i) {
+            s += (i == 0 ? "" : ", ") + format_number(v[i]);
+        }
+        return s + "]";
+    }
+    [[nodiscard]] static std::string shape_json(const Shape& s) {
+        switch (s.kind) {
+        case Shape::Kind::box:
+            return "{ \"type\": \"box\", \"size\": " + array_json(s.size) + " }";
+        case Shape::Kind::cylinder:
+            return "{ \"type\": \"cylinder\", \"radius\": " + format_number(s.radius) +
+                   ", \"height\": " + format_number(s.height) + " }";
+        case Shape::Kind::sphere:
+            return "{ \"type\": \"sphere\", \"radius\": " + format_number(s.radius) + " }";
+        case Shape::Kind::compound: {
+            std::string out = "{ \"type\": \"compound\", \"parts\": [";
+            for (std::size_t i = 0; i < s.parts.size(); ++i) {
+                const Shape::Part& p = s.parts[i];
+                out += (i == 0 ? " " : ", ") + std::string("{ \"shape\": ") + shape_json(p.shape) +
+                       ", \"offset\": { \"position\": " + array_json(p.position) +
+                       ", \"attitude\": " + array_json(p.attitude) + " } }";
+            }
+            return out + " ] }";
+        }
+        }
+        return {};
+    }
+    [[nodiscard]] static std::string entity_json(const Entity& e) {
+        std::string s = "{ \"id\": " + quote(e.id) + ", \"role\": " + quote(e.role);
+        if (!e.label.empty()) {
+            s += ", \"label\": " + quote(e.label);
+        }
+        s += ", \"shape\": " + shape_json(e.shape) + ", \"pose\": { \"position\": ";
+        if (const auto* p = std::get_if<std::array<double, 3>>(&e.pose.position)) {
+            s += array_json(*p);
+        } else {
+            s += quote(std::get<std::string>(e.pose.position));
+        }
+        if (e.pose.attitude) {
+            s += ", \"attitude\": ";
+            if (const auto* q = std::get_if<std::array<double, 4>>(&*e.pose.attitude)) {
+                s += array_json(*q);
+            } else {
+                s += quote(std::get<std::string>(*e.pose.attitude));
+            }
+        }
+        s += " }";
+        if (e.visual) {
+            const Visual& v = *e.visual;
+            if (v.kind == Visual::Kind::tree) {
+                s += ", \"visual\": { \"kind\": \"tree\"";
+                if (v.canopy_radius > 0) {
+                    s += ", \"canopy_radius\": " + format_number(v.canopy_radius);
+                }
+                s += " }";
+            } else {
+                s += ", \"visual\": { \"kind\": \"model\", \"uri\": " + quote(v.uri);
+                if (v.scale) {
+                    s += ", \"scale\": " + array_json(*v.scale);
+                }
+                s += " }";
+            }
+        }
+        return s + " }";
+    }
+
     void require_complete() const {
         for (const Channel& c : channels_) {
             if (c.data.size() != t_.size() * c.width) {
@@ -462,6 +794,7 @@ private:
     std::map<std::string, std::size_t, std::less<>> index_;
     std::vector<Event> events_;
     std::vector<Check> checks_;
+    std::vector<Entity> entities_;
 };
 
 /// The output path for a scenario: $REFLEX_TRACE_DIR/<relative>. Empty if the

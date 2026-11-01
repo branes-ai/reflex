@@ -53,7 +53,7 @@ export function diffTraces(a, b, profileName = 'regen') {
   const override = b.provenance.equivalence;
 
   if (profile.identity) {
-    for (const key of ['schema', 'frames', 'units', 'vehicle']) {
+    for (const key of ['schema', 'frames', 'units', 'vehicle', 'scene']) {
       if (!same(a[key] ?? null, b[key] ?? null)) failures.push(`${key}: differs`);
     }
     for (const key of IDENTITY_PROVENANCE) {

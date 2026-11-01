@@ -2,16 +2,35 @@
 // (z up), a PX4 Quad X glyph with rotor indices and spin arrows, per-rotor
 // thrust arrows to a stated scale, body axes, and the trail so far. An
 // optional ghost draws a second recorded run (for example a mirrored one)
-// beside the first, translucent. It shows recorded samples only; it renders
-// on demand, not in a loop.
+// beside the first, translucent. The trace's scene, if it has one, is drawn
+// around the vehicle: each entity's shape in its role's colour, or its visual
+// in its place (a procedural tree; a model is drawn as its shape until the
+// player loads models), at a fixed pose or one read from its channels, and
+// optionally the shapes of the entities drawn as visuals, over them. It shows recorded samples
+// only; it renders on demand, not in a loop.
 
 import * as THREE from 'three';
 import type { ViewHandle } from './player';
+
+type Primitive =
+  | { type: 'box'; size: number[] }
+  | { type: 'cylinder'; radius: number; height: number }
+  | { type: 'sphere'; radius: number };
+type Shape = Primitive | { type: 'compound'; parts: { shape: Primitive; offset: { position: number[]; attitude?: number[] } }[] };
+export interface SceneEntity {
+  id: string;
+  role: 'obstacle' | 'goal' | 'gate' | 'boundary' | 'agent' | 'marker';
+  label?: string;
+  shape: Shape;
+  pose: { position: number[] | string; attitude?: number[] | string };
+  visual?: { kind: 'tree'; canopy_radius?: number } | { kind: 'model'; uri: string; scale?: number[] };
+}
 
 interface Trace {
   t: number[];
   channels: Record<string, (number | number[])[]>;
   vehicle?: { arm_length?: number };
+  scene?: { entities: SceneEntity[] };
 }
 
 const DEFAULT_ARM = 0.11;
@@ -26,6 +45,7 @@ function tokens(el: HTMLElement) {
     ink: v('--tp-ink'), ink2: v('--tp-ink2'), grid: v('--tp-grid'), axis: v('--tp-axis'),
     series: [v('--tp-s1'), v('--tp-s2'), v('--tp-s3'), v('--tp-s4')],
     x: v('--tp-x'), y: v('--tp-y'), z: v('--tp-z'),
+    bark: v('--tp-bark'), foliage: v('--tp-foliage'), collision: v('--tp-bad'),
   };
 }
 
@@ -76,6 +96,79 @@ function spinArrow(radius: number, ccw: boolean, color: THREE.Color) {
   group.add(head);
   if (!ccw) group.scale.y = -1;  // mirror: the same arc, clockwise
   return group;
+}
+
+// ── The scene ────────────────────────────────────────────────────────
+
+/** The geometry of a primitive, centred on its origin, a cylinder along z. */
+function primitiveGeometry(p: Primitive): THREE.BufferGeometry {
+  if (p.type === 'box') return new THREE.BoxGeometry(p.size[0], p.size[1], p.size[2]);
+  if (p.type === 'sphere') return new THREE.SphereGeometry(p.radius, 24, 16);
+  return new THREE.CylinderGeometry(p.radius, p.radius, p.height, 24).rotateX(Math.PI / 2);  // three's axis is y
+}
+
+/** A shape's primitives with their offsets in the entity's frame. */
+function primitives(shape: Shape): { shape: Primitive; position: number[]; attitude: number[] }[] {
+  return shape.type === 'compound'
+    ? shape.parts.map((p) => ({ shape: p.shape, position: p.offset.position, attitude: p.offset.attitude ?? [1, 0, 0, 0] }))
+    : [{ shape, position: [0, 0, 0], attitude: [1, 0, 0, 0] }];
+}
+
+/** The shape as meshes (`solid`) or as its edges (`edges`), in the entity's frame. */
+function shapeObject(shape: Shape, material: THREE.Material, mode: 'solid' | 'edges') {
+  const group = new THREE.Group();
+  for (const part of primitives(shape)) {
+    const geometry = primitiveGeometry(part.shape);
+    const o: THREE.Object3D =
+      mode === 'solid' ? new THREE.Mesh(geometry, material) : new THREE.LineSegments(new THREE.EdgesGeometry(geometry, 30), material);
+    if (mode === 'edges') geometry.dispose();
+    o.position.set(part.position[0], part.position[1], part.position[2]);
+    o.quaternion.set(part.attitude[1], part.attitude[2], part.attitude[3], part.attitude[0]);
+    group.add(o);
+  }
+  return group;
+}
+
+/** A tree on its cylinder: the trunk, the cylinder itself, and a canopy over its upper half. */
+function treeObject(cyl: { radius: number; height: number }, canopyRadius: number | undefined, c: ReturnType<typeof tokens>) {
+  const group = new THREE.Group();
+  const trunk = new THREE.Mesh(primitiveGeometry({ type: 'cylinder', ...cyl }), new THREE.MeshLambertMaterial({ color: c.bark }));
+  group.add(trunk);
+  const r = canopyRadius ?? Math.max(3 * cyl.radius, 0.6);
+  const crown = cyl.height * 0.55;
+  const canopy = new THREE.Mesh(new THREE.ConeGeometry(r, crown, 18).rotateX(Math.PI / 2), new THREE.MeshLambertMaterial({ color: c.foliage }));
+  canopy.position.z = cyl.height / 2 - crown / 2;  // from 45 % of the height to the top
+  group.add(canopy);
+  return group;
+}
+
+/** An entity as drawn: its visual, or its shape in its role's colour. */
+function entityObject(e: SceneEntity, c: ReturnType<typeof tokens>) {
+  if (e.visual?.kind === 'tree' && e.shape.type === 'cylinder') return treeObject(e.shape, e.visual.canopy_radius, c);
+  const lambert = (color: THREE.Color, extra: THREE.MeshLambertMaterialParameters = {}) =>
+    new THREE.MeshLambertMaterial({ color, ...extra });
+  switch (e.role) {
+    case 'boundary':
+      return shapeObject(e.shape, new THREE.LineBasicMaterial({ color: c.axis }), 'edges');
+    case 'marker':
+      return shapeObject(e.shape, new THREE.LineBasicMaterial({ color: c.ink2 }), 'edges');
+    case 'goal': {
+      const group = shapeObject(e.shape, lambert(c.series[2], { transparent: true, opacity: 0.3, depthWrite: false }), 'solid');
+      group.add(shapeObject(e.shape, new THREE.LineBasicMaterial({ color: c.series[2] }), 'edges'));
+      return group;
+    }
+    case 'gate':
+      return shapeObject(e.shape, lambert(c.series[1]), 'solid');
+    case 'agent':
+      return shapeObject(e.shape, lambert(c.series[3]), 'solid');
+    default:
+      return shapeObject(e.shape, lambert(c.ink2), 'solid');
+  }
+}
+
+/** The channel a pose component names, or null for a fixed one. */
+function poseChannel(tr: Trace, v: number[] | string | undefined) {
+  return typeof v === 'string' ? (tr.channels[v] as number[][]) : null;
 }
 
 /** Channels of a second run drawn as a translucent ghost. */
@@ -169,6 +262,8 @@ export function createVehicleView(
   const center = new THREE.Vector3();
   let extentXY = 1;
   let extent = 1;
+  let entities: SceneEntity[] = [];
+  let showCollision = false;
 
   function use(tr: Trace) {
     pos = tr.channels.position as number[][];
@@ -181,9 +276,17 @@ export function createVehicleView(
           thrusts: opts.ghost.thrusts ? (tr.channels[opts.ghost.thrusts] as number[][]) : undefined,
         }
       : null;
+    entities = tr.scene?.entities ?? [];
     box.makeEmpty();
     for (const path of ghost ? [pos, ghost.pos] : [pos]) {
       path.forEach((p) => box.expandByPoint(new THREE.Vector3(p[0], p[1], p[2])));
+    }
+    // The scene too, so the grid and the overview take in the whole field.
+    for (const e of entities) {
+      const reach = new THREE.Box3();
+      shapeBounds(e.shape, reach);
+      const path = poseChannel(tr, e.pose.position) ?? [e.pose.position as number[]];
+      path.forEach((p) => box.union(reach.clone().translate(new THREE.Vector3(p[0], p[1], p[2]))));
     }
     box.expandByPoint(new THREE.Vector3(box.min.x, box.min.y, 0));
     box.getCenter(center);
@@ -192,7 +295,21 @@ export function createVehicleView(
   }
   use(trace);
 
+  /** A loose box around a shape in any attitude: its bounding sphere's. */
+  function shapeBounds(shape: Shape, out: THREE.Box3) {
+    for (const part of primitives(shape)) {
+      const g = primitiveGeometry(part.shape);
+      g.computeBoundingSphere();
+      const r = g.boundingSphere!.radius;
+      g.dispose();
+      const o = new THREE.Vector3(part.position[0], part.position[1], part.position[2]);
+      out.union(new THREE.Box3(o.clone().subScalar(r), o.clone().addScalar(r)));
+    }
+  }
+
   let built: THREE.Object3D[] = [];
+  // Each entity's drawn object and collision overlay, posed from its channels when it moves.
+  let placed: { e: SceneEntity; drawn: THREE.Object3D; overlay: THREE.Object3D }[] = [];
   let main: ReturnType<typeof glyph>;
   let shadow: ReturnType<typeof glyph> | null = null;
   let trail: THREE.Line;
@@ -234,6 +351,33 @@ export function createVehicleView(
     // Trail: the whole path, drawn up to the current sample.
     trail = line(pos, c.ink2, 1);
     built = [grid, world, main.body, trail];
+    placed = [];
+    if (entities.length) {
+      // The scene's solids are lit; the glyph's materials are unlit, as before.
+      const sky = new THREE.HemisphereLight(0xffffff, c.grid, 1.6);
+      sky.position.set(0, 0, 1);
+      const sun = new THREE.DirectionalLight(0xffffff, 1.4);
+      sun.position.set(-0.6, -0.8, 1);
+      built.push(sky, sun);
+      // The collision shapes of the entities drawn as visuals (the others are
+      // drawn as their shapes already) draw over everything, so a shape inside
+      // its visual (a trunk inside its canopy) still shows: a translucent
+      // volume and its edges.
+      const over = { depthTest: false, depthWrite: false, transparent: true };
+      const fill = new THREE.MeshBasicMaterial({ color: c.collision, opacity: 0.3, ...over });
+      const edge = new THREE.LineBasicMaterial({ color: c.collision, ...over });
+      for (const e of entities) {
+        const drawn = entityObject(e, c);
+        const overlay = new THREE.Group();
+        if (e.visual) {
+          overlay.add(shapeObject(e.shape, fill, 'solid'), shapeObject(e.shape, edge, 'edges'));
+          overlay.traverse((o) => (o.renderOrder = 5));
+        }
+        overlay.visible = showCollision;
+        placed.push({ e, drawn, overlay });
+        built.push(drawn, overlay);
+      }
+    }
     if (ghost) {
       shadow = glyph(arm, c, 0.4);
       ghostTrail = line(ghost.pos, c.ink2, 0.4);
@@ -261,7 +405,23 @@ export function createVehicleView(
     });
   }
 
+  /** Sets each entity's pose at the current sample: fixed, or from its channels. */
+  function poseEntities(tr: Trace) {
+    for (const { e, drawn, overlay } of placed) {
+      const pc = poseChannel(tr, e.pose.position);
+      const ac = poseChannel(tr, e.pose.attitude);
+      const p = pc ? pc[index] : (e.pose.position as number[]);
+      const q = ac ? ac[index] : ((e.pose.attitude as number[] | undefined) ?? [1, 0, 0, 0]);
+      for (const o of [drawn, overlay]) {
+        o.position.set(p[0], p[1], p[2]);
+        o.quaternion.set(q[1], q[2], q[3], q[0]);  // trace is [w, x, y, z]; three is (x, y, z, w)
+      }
+    }
+  }
+  let current: Trace = trace;
+
   function draw() {
+    poseEntities(current);
     const p = pos[index];
     place(main, p, att[index], thrusts?.[index]);
     trail.geometry.setDrawRange(0, index + 1);
@@ -314,7 +474,13 @@ export function createVehicleView(
       cameraMode = mode;
       draw();
     },
+    setCollision(on: boolean) {
+      showCollision = on;
+      placed.forEach(({ overlay }) => (overlay.visible = on));
+      draw();
+    },
     setTrace(next: Trace) {
+      current = next;
       use(next);
       index = Math.min(index, pos.length - 1);
       build();

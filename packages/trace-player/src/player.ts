@@ -39,6 +39,8 @@ interface Payload {
 export interface ViewHandle {
   show(index: number): void;
   setCamera(mode: string): void;
+  /** Shows or hides the scene's collision shapes over its visuals. */
+  setCollision(on: boolean): void;
   setTrace(trace: Trace): void;
 }
 
@@ -307,6 +309,12 @@ function attach(root: HTMLElement) {
           view!.setCamera(mode);
         };
         buttons.forEach((b) => b.addEventListener('click', () => select(b.dataset.camera!)));
+        const collision = host.querySelector<HTMLButtonElement>('[data-collision]');
+        collision?.addEventListener('click', () => {
+          const on = collision.getAttribute('aria-pressed') !== 'true';
+          collision.setAttribute('aria-pressed', String(on));
+          view!.setCollision(on);
+        });
         // Under reduced motion the camera stays still: no chase camera.
         select(reducedMotion() ? 'overview' : 'chase');
         view.show(index);

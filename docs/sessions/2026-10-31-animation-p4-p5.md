@@ -62,9 +62,11 @@ Releases: v0.8.0 (P4), v0.9.0 (P5, the first with
 - **BB-R5**, the deployment guide in the building block standard for grade
   A. The five blocks with pages all have one.
 - The package README pins v0.9.0, one release behind. It works, and the
-  URL must name a version (a release tarball has no unversioned alias). To
-  keep it current, release-please could rewrite it on each release: list the
-  README in `extra-files` as a `generic` file and mark the URL's line with
-  `x-release-please-version`.
+  URL must name a version (a release tarball has no unversioned alias), and
+  names it twice, in the tag and in the file name. Keeping it current needs
+  an update that changes both on each release, and a check in the
+  `trace-player` release job that the README's URL matches the version it
+  uploads; a single release-please version marker on the line may update
+  only the first.
 - racing-drone's replay view does not draw the course; the events step
   through the gate passages.

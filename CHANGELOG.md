@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.4](https://github.com/branes-ai/reflex/compare/v0.9.3...v0.9.4) (2026-11-01)
+
+
+### Continuous Integration
+
+* **release:** keep the trace player README's install version current, and check it ([#77](https://github.com/branes-ai/reflex/issues/77)) ([95a02ec](https://github.com/branes-ai/reflex/commit/95a02ec38544096ed409297cd9a65d1d1a15c717))
+
 ## [0.9.3](https://github.com/branes-ai/reflex/compare/v0.9.2...v0.9.3) (2026-11-01)
 
 

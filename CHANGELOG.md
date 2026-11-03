@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.1](https://github.com/branes-ai/reflex/compare/v0.10.0...v0.10.1) (2026-11-03)
+
+
+### Bug Fixes
+
+* **build:** fetch a moved pin in an existing build tree ([#82](https://github.com/branes-ai/reflex/issues/82)) ([441d6dd](https://github.com/branes-ai/reflex/commit/441d6ddf60cc69e6917b1eb5a23fe08ae840e1c8))
+
 ## [0.10.0](https://github.com/branes-ai/reflex/compare/v0.9.4...v0.10.0) (2026-11-01)
 
 

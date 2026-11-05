@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.2](https://github.com/branes-ai/reflex/compare/v0.10.1...v0.10.2) (2026-11-05)
+
+
+### Continuous Integration
+
+* pin docs-kit and architecture by their rewritten shas ([#84](https://github.com/branes-ai/reflex/issues/84)) ([1a46ee4](https://github.com/branes-ai/reflex/commit/1a46ee45c92936f0e9b79177a360ec226bfd3460))
+
 ## [0.10.1](https://github.com/branes-ai/reflex/compare/v0.10.0...v0.10.1) (2026-11-03)
 
 

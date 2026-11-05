@@ -64,7 +64,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           persist-credentials: false
-      - uses: branes-ai/architecture/actions/check-records@05e845c5215b7284e99af4517e4299f3167600a4  # main after architecture#12
+      - uses: branes-ai/architecture/actions/check-records@bf465aba269631045fa2042b4a65af4ebfadd011  # main after architecture#12
         with:
           strict: 'true'
 

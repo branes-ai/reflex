@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.3](https://github.com/branes-ai/reflex/compare/v0.10.2...v0.10.3) (2026-11-05)
+
+
+### Continuous Integration
+
+* add Branes.AI CLA check ([#86](https://github.com/branes-ai/reflex/issues/86)) ([647fcd4](https://github.com/branes-ai/reflex/commit/647fcd4f8d8c5e6a5141e930cf11feb271436228))
+
 ## [0.10.2](https://github.com/branes-ai/reflex/compare/v0.10.1...v0.10.2) (2026-11-05)
 
 
